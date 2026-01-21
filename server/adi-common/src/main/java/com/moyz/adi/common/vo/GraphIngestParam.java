@@ -1,0 +1,25 @@
+package com.moyz.adi.common.vo;
+
+import com.moyz.adi.common.entity.User;
+import dev.langchain4j.data.document.Document;
+import dev.langchain4j.model.chat.ChatModel;
+import lombok.Builder;
+import lombok.Data;
+
+import java.util.List;
+
+@Data
+@Builder
+public class GraphIngestParam {
+    private User user;
+    private Document document;
+    private int overlap;
+    private String strategy;
+    private int maxSegmentSize;
+    private String customSeparator;
+    private String tokenEstimator;
+    private ChatModel ChatModel;
+    private List<String> identifyColumns;
+    private List<String> appendColumns;
+    private boolean isFreeToken;
+}
