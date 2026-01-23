@@ -1,0 +1,452 @@
+package com.moyz.adi.common.service;
+
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.extension.toolkit.ChainWrappers;
+import com.moyz.adi.common.base.ThreadContext;
+import com.moyz.adi.common.cosntant.AdiConstant;
+import com.moyz.adi.common.dto.KbItemDto;
+import com.moyz.adi.common.dto.KbItemEditReq;
+import com.moyz.adi.common.entity.KnowledgeBase;
+import com.moyz.adi.common.entity.KnowledgeBaseItem;
+import com.moyz.adi.common.entity.User;
+import com.moyz.adi.common.enums.EmbeddingStatusEnum;
+import com.moyz.adi.common.enums.GraphicalStatusEnum;
+import com.moyz.adi.common.exception.BaseException;
+import com.moyz.adi.common.helper.LLMContext;
+import com.moyz.adi.common.mapper.KnowledgeBaseItemMapper;
+import com.moyz.adi.common.rag.EmbeddingRagContext;
+import com.moyz.adi.common.rag.GraphRagContext;
+import com.moyz.adi.common.service.embedding.IKnowledgeEmbeddingService;
+import com.moyz.adi.common.languagemodel.AbstractLLMService;
+import com.moyz.adi.common.util.UuidUtil;
+import com.moyz.adi.common.vo.ChatModelBuilderProperties;
+import com.moyz.adi.common.vo.EmbeddingIngestParam;
+import com.moyz.adi.common.vo.GraphIngestParam;
+import dev.langchain4j.data.document.DefaultDocument;
+import dev.langchain4j.data.document.Document;
+import dev.langchain4j.data.document.Metadata;
+import dev.langchain4j.model.chat.ChatModel;
+import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.data.redis.core.StringRedisTemplate;
+import org.springframework.scheduling.annotation.Async;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.text.MessageFormat;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.concurrent.TimeUnit;
+
+import static com.moyz.adi.common.cosntant.AdiConstant.DOC_INDEX_TYPE_EMBEDDING;
+import static com.moyz.adi.common.cosntant.AdiConstant.DOC_INDEX_TYPE_GRAPHICAL;
+import static com.moyz.adi.common.cosntant.AdiConstant.RetrieveContentFrom.KNOWLEDGE_BASE;
+import static com.moyz.adi.common.cosntant.RedisKeyConstant.KB_STATISTIC_RECALCULATE_SIGNAL;
+import static com.moyz.adi.common.cosntant.RedisKeyConstant.USER_INDEXING;
+import static com.moyz.adi.common.enums.ErrorEnum.*;
+
+@Slf4j
+@Service
+public class KnowledgeBaseItemService extends ServiceImpl<KnowledgeBaseItemMapper, KnowledgeBaseItem> {
+
+    @Resource
+    @Lazy
+    private KnowledgeBaseItemService self;
+
+    @Resource
+    private StringRedisTemplate stringRedisTemplate;
+
+    @Resource
+    private IKnowledgeEmbeddingService iKnowledgeEmbeddingService;
+
+    @Resource
+    private FileService fileService;
+
+    public KnowledgeBaseItem saveOrUpdate(KbItemEditReq itemEditReq) {
+        String uuid = itemEditReq.getUuid();
+        // Authorize before mutating: by knowledge-base uuid when creating (no item
+        // uuid exists yet), by item id when updating (the client-controlled uuid
+        // cannot be trusted; the real target is resolved by id).
+        if (null == itemEditReq.getId() || itemEditReq.getId() < 1) {
+            checkWritePrivilegeByKb(itemEditReq.getKbUuid());
+        } else {
+            checkWritePrivilegeById(itemEditReq.getId());
+        }
+        KnowledgeBaseItem item = new KnowledgeBaseItem();
+        item.setTitle(itemEditReq.getTitle());
+        if (StringUtils.isNotBlank(itemEditReq.getBrief())) {
+            item.setBrief(itemEditReq.getBrief());
+        } else {
+            item.setBrief(StringUtils.substring(itemEditReq.getRemark(), 0, 200));
+        }
+        item.setRemark(itemEditReq.getRemark());
+        if (null == itemEditReq.getId() || itemEditReq.getId() < 1) {
+            uuid = UuidUtil.createShort();
+            item.setUuid(uuid);
+            item.setKbId(itemEditReq.getKbId());
+            item.setKbUuid(itemEditReq.getKbUuid());
+            baseMapper.insert(item);
+        } else {
+            item.setId(itemEditReq.getId());
+            baseMapper.updateById(item);
+        }
+
+        stringRedisTemplate.opsForSet().add(KB_STATISTIC_RECALCULATE_SIGNAL, itemEditReq.getKbUuid());
+
+        return ChainWrappers.lambdaQueryChain(baseMapper)
+                .eq(KnowledgeBaseItem::getUuid, uuid)
+                .one();
+    }
+
+    public KnowledgeBaseItem getEnable(String uuid) {
+        return ChainWrappers.lambdaQueryChain(baseMapper)
+                .eq(KnowledgeBaseItem::getUuid, uuid)
+                .eq(KnowledgeBaseItem::getIsDeleted, false)
+                .one();
+    }
+
+    /**
+     * Search items in a knowledge base by keyword.
+     */
+    public Page<KbItemDto> search(String kbUuid, String keyword, Integer currentPage, Integer pageSize) {
+        Page<KbItemDto> page = baseMapper.searchByKb(new Page<>(currentPage, pageSize), kbUuid, keyword);
+        page.getRecords().forEach(item -> item.setSourceFileUrl(fileService.getUrl(item.getSourceFileUuid())));
+        return page;
+    }
+
+    /**
+     * 批量索引知识点
+     *
+     * @param knowledgeBase 知识库
+     * @param kbItemUuids   知识点uuid列表
+     * @param indexTypes    索引类型，如embedding,graphical
+     * @return 成功或失败
+     */
+    public boolean checkAndIndexing(KnowledgeBase knowledgeBase, List<String> kbItemUuids, List<String> indexTypes) {
+        String userIndexKey = MessageFormat.format(USER_INDEXING, knowledgeBase.getOwnerId());
+        boolean hasTask = false;
+        for (String kbItemUuid : kbItemUuids) {
+            if (hasWritePrivilege(kbItemUuid)) {
+                KnowledgeBaseItem item = getEnable(kbItemUuid);
+                if (item != null) {
+                    if (!hasTask) {
+                        stringRedisTemplate.opsForValue().set(userIndexKey, "0", 10, TimeUnit.MINUTES);
+                        hasTask = true;
+                    }
+                    self.asyncIndex(ThreadContext.getCurrentUser(), knowledgeBase, item, indexTypes);
+                }
+            }
+        }
+        return true;
+    }
+
+    /**
+     * 对文档进行索引(向量化、图谱化)
+     *
+     * @param user          用户
+     * @param knowledgeBase 知识库
+     * @param kbItem        知识点
+     * @param indexTypes    索引类型，如embedding,graphical
+     */
+    @Async
+    public void asyncIndex(User user, KnowledgeBase knowledgeBase, KnowledgeBaseItem kbItem, List<String> indexTypes) {
+        String userIndexKey = MessageFormat.format(USER_INDEXING, knowledgeBase.getOwnerId());
+        stringRedisTemplate.opsForValue().increment(userIndexKey);
+        stringRedisTemplate.expire(userIndexKey, 10, TimeUnit.MINUTES);
+        try {
+            if (indexTypes.contains(DOC_INDEX_TYPE_EMBEDDING) && kbItem.getEmbeddingStatus() != EmbeddingStatusEnum.DOING) {
+                Metadata metadata = new Metadata();
+                metadata.put(AdiConstant.MetadataKey.KB_UUID, kbItem.getKbUuid());
+                metadata.put(AdiConstant.MetadataKey.KB_ITEM_UUID, kbItem.getUuid());
+                Document document = new DefaultDocument(kbItem.getRemark(), metadata);
+                iKnowledgeEmbeddingService.deleteByItemUuid(kbItem.getUuid());
+                indexingEmbedding(knowledgeBase, kbItem, document);
+            }
+            if (indexTypes.contains(DOC_INDEX_TYPE_GRAPHICAL) && kbItem.getGraphicalStatus() != GraphicalStatusEnum.DOING) {
+                Metadata metadata = new Metadata();
+                metadata.put(AdiConstant.MetadataKey.KB_UUID, kbItem.getKbUuid());
+                metadata.put(AdiConstant.MetadataKey.KB_ITEM_UUID, kbItem.getUuid());
+                Document document = new DefaultDocument(kbItem.getRemark(), metadata);
+                indexingGraph(user, knowledgeBase, kbItem, document);
+            }
+        } finally {
+            stringRedisTemplate.opsForSet().add(KB_STATISTIC_RECALCULATE_SIGNAL, kbItem.getKbUuid());
+            Long remaining = stringRedisTemplate.opsForValue().decrement(userIndexKey);
+            if (remaining != null && remaining <= 0) {
+                stringRedisTemplate.delete(userIndexKey);
+            }
+        }
+
+    }
+
+    private void indexingEmbedding(KnowledgeBase knowledgeBase, KnowledgeBaseItem kbItem, Document document) {
+        try {
+            ChainWrappers.lambdaUpdateChain(baseMapper)
+                    .eq(KnowledgeBaseItem::getId, kbItem.getId())
+                    .set(KnowledgeBaseItem::getEmbeddingStatusChangeTime, LocalDateTime.now())
+                    .set(KnowledgeBaseItem::getEmbeddingStatus, EmbeddingStatusEnum.DOING)
+                    .update();
+            EmbeddingRagContext.get(KNOWLEDGE_BASE).ingest(document,
+                    EmbeddingIngestParam.builder()
+                            .overlap(knowledgeBase.getIngestMaxOverlap())
+                            .strategy(knowledgeBase.getIngestSplitStrategy())
+                            .maxSegmentSize(knowledgeBase.getIngestMaxSegmentSize())
+                            .customSeparator(knowledgeBase.getIngestCustomSeparator())
+                            .tokenEstimator(knowledgeBase.getIngestTokenEstimator())
+                            .build());
+            ChainWrappers.lambdaUpdateChain(baseMapper)
+                    .eq(KnowledgeBaseItem::getId, kbItem.getId())
+                    .set(KnowledgeBaseItem::getEmbeddingStatus, EmbeddingStatusEnum.DONE)
+                    .update();
+        } catch (Exception e) {
+            log.error("ingestForEmbedding error", e);
+            ChainWrappers.lambdaUpdateChain(baseMapper)
+                    .eq(KnowledgeBaseItem::getId, kbItem.getId())
+                    .set(KnowledgeBaseItem::getEmbeddingStatusChangeTime, LocalDateTime.now())
+                    .set(KnowledgeBaseItem::getEmbeddingStatus, EmbeddingStatusEnum.FAIL)
+                    .update();
+        }
+    }
+
+    private void indexingGraph(User user, KnowledgeBase knowledgeBase, KnowledgeBaseItem kbItem, Document document) {
+        try {
+            ChainWrappers.lambdaUpdateChain(baseMapper)
+                    .eq(KnowledgeBaseItem::getId, kbItem.getId())
+                    .set(KnowledgeBaseItem::getGraphicalStatusChangeTime, LocalDateTime.now())
+                    .set(KnowledgeBaseItem::getGraphicalStatus, GraphicalStatusEnum.DOING)
+                    .update();
+            AbstractLLMService llmService = LLMContext.getServiceById(knowledgeBase.getIngestModelId(), true);
+            ChatModel ChatModel = llmService.buildChatLLM(
+                    ChatModelBuilderProperties.builder()
+                            .temperature(knowledgeBase.getQueryLlmTemperature())
+                            .build()
+            );
+
+            //Ingest document
+            GraphRagContext.get(KNOWLEDGE_BASE).ingest(
+                    GraphIngestParam.builder()
+                            .user(user)
+                            .document(document)
+                            .overlap(knowledgeBase.getIngestMaxOverlap())
+                            .strategy(knowledgeBase.getIngestSplitStrategy())
+                            .maxSegmentSize(knowledgeBase.getIngestMaxSegmentSize())
+                            .customSeparator(knowledgeBase.getIngestCustomSeparator())
+                            .tokenEstimator(knowledgeBase.getIngestTokenEstimator())
+                            .ChatModel(ChatModel)
+                            .identifyColumns(List.of(AdiConstant.MetadataKey.KB_UUID))
+                            .appendColumns(List.of(AdiConstant.MetadataKey.KB_ITEM_UUID))
+                            .isFreeToken(llmService.getAiModel().getIsFree())
+                            .build()
+            );
+            ChainWrappers.lambdaUpdateChain(baseMapper)
+                    .eq(KnowledgeBaseItem::getId, kbItem.getId())
+                    .set(KnowledgeBaseItem::getGraphicalStatus, GraphicalStatusEnum.DONE)
+                    .update();
+        } catch (Exception e) {
+            log.error("ingestForGraph error", e);
+            ChainWrappers.lambdaUpdateChain(baseMapper)
+                    .eq(KnowledgeBaseItem::getId, kbItem.getId())
+                    .set(KnowledgeBaseItem::getGraphicalStatusChangeTime, LocalDateTime.now())
+                    .set(KnowledgeBaseItem::getGraphicalStatus, GraphicalStatusEnum.FAIL)
+                    .update();
+        }
+    }
+
+    @Transactional
+    public boolean softDelete(String uuid) {
+        checkWritePrivilege(uuid);
+        boolean success = ChainWrappers.lambdaUpdateChain(baseMapper)
+                .eq(KnowledgeBaseItem::getUuid, uuid)
+                .set(KnowledgeBaseItem::getIsDeleted, true)
+                .update();
+        if (!success) {
+            return false;
+        }
+        iKnowledgeEmbeddingService.deleteByItemUuid(uuid);
+
+        KnowledgeBaseItem item = baseMapper.getByUuid(uuid);
+        if (null != item) {
+            stringRedisTemplate.opsForSet().add(KB_STATISTIC_RECALCULATE_SIGNAL, item.getKbUuid());
+        }
+        return true;
+    }
+
+    public int countByKbUuid(String kbUuid) {
+        return ChainWrappers.lambdaQueryChain(baseMapper)
+                .eq(KnowledgeBaseItem::getKbUuid, kbUuid)
+                .eq(KnowledgeBaseItem::getIsDeleted, false)
+                .count()
+                .intValue();
+    }
+
+    public int countTodayCreated() {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime beginTime = LocalDateTime.of(now.getYear(), now.getMonth(), now.getDayOfMonth(), 0, 0, 0);
+        LocalDateTime endTime = beginTime.plusDays(1);
+        return baseMapper.countCreatedByTimePeriod(beginTime, endTime);
+    }
+
+    public int countAllCreated() {
+        return baseMapper.countAllCreated();
+    }
+
+    /**
+     * Toggle the enabled/disabled status of a document. When disabled, the document's
+     * segments are excluded from vector and graph retrieval.
+     */
+    public boolean toggleStatus(String uuid, Boolean isEnabled) {
+        checkWritePrivilege(uuid);
+        return ChainWrappers.lambdaUpdateChain(baseMapper)
+                .eq(KnowledgeBaseItem::getUuid, uuid)
+                .set(KnowledgeBaseItem::getIsEnabled, isEnabled)
+                .set(KnowledgeBaseItem::getEnabledChangeTime, LocalDateTime.now())
+                .update();
+    }
+
+    /**
+     * List the UUIDs of disabled documents in a knowledge base, used to exclude
+     * their segments from retrieval.
+     */
+    public List<String> listDisabledItemUuids(String kbUuid) {
+        return baseMapper.listDisabledItemUuids(kbUuid);
+    }
+
+    public void incrementEmbeddingHitCount(List<String> uuids) {
+        if (uuids != null && !uuids.isEmpty()) {
+            baseMapper.incrementEmbeddingHitCount(uuids);
+        }
+    }
+
+    public void incrementGraphHitCount(List<String> uuids) {
+        if (uuids != null && !uuids.isEmpty()) {
+            baseMapper.incrementGraphHitCount(uuids);
+        }
+    }
+
+    /**
+     * Fetch a knowledge-base item by uuid after a read-privilege check. Both the
+     * check and the query operate on the item itself, so they are kept together
+     * here rather than split across the controller.
+     */
+    public KnowledgeBaseItem info(String uuid) {
+        checkReadPrivilege(uuid);
+        return getEnable(uuid);
+    }
+
+    /**
+     * Write-privilege check: allows the owner or an admin. Throws
+     * {@link com.moyz.adi.common.enums.ErrorEnum#A_USER_NOT_AUTH} on denial.
+     * Used by single write operations such as delete.
+     */
+    public void checkWritePrivilege(String uuid) {
+        if (!hasWritePrivilege(uuid)) {
+            throw new BaseException(A_USER_NOT_AUTH);
+        }
+    }
+
+    /**
+     * Write-privilege probe: returns whether the owner or an admin may write,
+     * without throwing. Used by batch flows (e.g. indexing) that skip items the
+     * current user is not allowed to touch instead of aborting the whole batch.
+     */
+    public boolean hasWritePrivilege(String uuid) {
+        if (StringUtils.isBlank(uuid)) {
+            throw new BaseException(A_PARAMS_ERROR);
+        }
+        User user = ThreadContext.getCurrentUser();
+        if (null == user) {
+            throw new BaseException(A_USER_NOT_EXIST);
+        }
+        if (Boolean.TRUE.equals(user.getIsAdmin())) {
+            return true;
+        }
+        return baseMapper.checkWritePrivilege(uuid, user.getId()) > 0;
+    }
+
+    /**
+     * Write-privilege check keyed by knowledge-base uuid: allows the owner of the
+     * knowledge base or an admin. Throws
+     * {@link com.moyz.adi.common.enums.ErrorEnum#A_USER_NOT_AUTH} on denial.
+     * Used when creating a new item, where no item uuid exists yet.
+     */
+    public void checkWritePrivilegeByKb(String kbUuid) {
+        if (!hasWritePrivilegeByKb(kbUuid)) {
+            throw new BaseException(A_USER_NOT_AUTH);
+        }
+    }
+
+    /**
+     * Write-privilege probe keyed by knowledge-base uuid: returns whether the
+     * owner of the knowledge base or an admin may write, without throwing.
+     */
+    public boolean hasWritePrivilegeByKb(String kbUuid) {
+        if (StringUtils.isBlank(kbUuid)) {
+            throw new BaseException(A_PARAMS_ERROR);
+        }
+        User user = ThreadContext.getCurrentUser();
+        if (null == user) {
+            throw new BaseException(A_USER_NOT_EXIST);
+        }
+        if (Boolean.TRUE.equals(user.getIsAdmin())) {
+            return true;
+        }
+        return baseMapper.checkWritePrivilegeByKb(kbUuid, user.getId()) > 0;
+    }
+
+    /**
+     * Write-privilege check keyed by item id: allows the owner of the item's
+     * knowledge base or an admin. Throws
+     * {@link com.moyz.adi.common.enums.ErrorEnum#A_USER_NOT_AUTH} on denial.
+     * Used when updating an item, where the real target is resolved by id rather
+     * than the client-controlled uuid.
+     */
+    public void checkWritePrivilegeById(Long id) {
+        if (!hasWritePrivilegeById(id)) {
+            throw new BaseException(A_USER_NOT_AUTH);
+        }
+    }
+
+    /**
+     * Write-privilege probe keyed by item id: returns whether the owner of the
+     * item's knowledge base or an admin may write, without throwing.
+     */
+    public boolean hasWritePrivilegeById(Long id) {
+        if (null == id || id < 1) {
+            throw new BaseException(A_PARAMS_ERROR);
+        }
+        User user = ThreadContext.getCurrentUser();
+        if (null == user) {
+            throw new BaseException(A_USER_NOT_EXIST);
+        }
+        if (Boolean.TRUE.equals(user.getIsAdmin())) {
+            return true;
+        }
+        return baseMapper.checkWritePrivilegeById(id, user.getId()) > 0;
+    }
+
+    /**
+     * Read-privilege check: allows the owner, an admin, or anyone when the
+     * owning knowledge base is public. Used by reads of an item and its derived
+     * content (embeddings, graph). Denials are reported as
+     * {@link com.moyz.adi.common.enums.ErrorEnum#A_DATA_NOT_FOUND} to avoid
+     * leaking the existence of other users' private knowledge bases.
+     */
+    public void checkReadPrivilege(String uuid) {
+        if (StringUtils.isBlank(uuid)) {
+            throw new BaseException(A_PARAMS_ERROR);
+        }
+        User user = ThreadContext.getCurrentUser();
+        if (null == user) {
+            throw new BaseException(A_USER_NOT_EXIST);
+        }
+        if (Boolean.TRUE.equals(user.getIsAdmin())) {
+            return;
+        }
+        if (baseMapper.checkReadPrivilege(uuid, user.getId()) == 0) {
+            throw new BaseException(A_DATA_NOT_FOUND);
+        }
+    }
+}
