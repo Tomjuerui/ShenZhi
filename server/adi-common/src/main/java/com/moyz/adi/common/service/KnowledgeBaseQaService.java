@@ -1,0 +1,184 @@
+package com.moyz.adi.common.service;
+
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
+import com.baomidou.mybatisplus.extension.toolkit.ChainWrappers;
+import com.moyz.adi.common.base.ThreadContext;
+import com.moyz.adi.common.dto.KbQaDto;
+import com.moyz.adi.common.dto.QARecordReq;
+import com.moyz.adi.common.dto.RefGraphDto;
+import com.moyz.adi.common.entity.*;
+import com.moyz.adi.common.enums.LLMCallRecordSourceType;
+import com.moyz.adi.common.exception.BaseException;
+import com.moyz.adi.common.mapper.KnowledgeBaseQaRecordMapper;
+import com.moyz.adi.common.util.EntityRefreshUtil;
+import com.moyz.adi.common.util.JsonUtil;
+import com.moyz.adi.common.util.MPPageUtil;
+import com.moyz.adi.common.util.UuidUtil;
+import jakarta.annotation.Resource;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.BeanUtils;
+import org.springframework.stereotype.Service;
+
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import static com.moyz.adi.common.enums.ErrorEnum.A_DATA_NOT_FOUND;
+import static com.moyz.adi.common.util.LocalCache.MODEL_ID_TO_OBJ;
+
+@Slf4j
+@Service
+public class KnowledgeBaseQaService extends ServiceImpl<KnowledgeBaseQaRecordMapper, KnowledgeBaseQa> {
+
+    @Resource
+    private KnowledgeBaseQaRecordReferenceService knowledgeBaseQaRecordReferenceService;
+
+    @Resource
+    private KnowledgeBaseQaRefGraphService knowledgeBaseQaRecordRefGraphService;
+
+    @Resource
+    private AiModelService aiModelService;
+
+    @Resource
+    private LLMCallRecordService llmCallRecordService;
+
+    public KbQaDto add(KnowledgeBase knowledgeBase, QARecordReq req) {
+        KnowledgeBaseQa newRecord = new KnowledgeBaseQa();
+        newRecord.setAiModelId(aiModelService.getIdByName(req.getModelName()));
+        newRecord.setQuestion(req.getQuestion());
+        newRecord.setKbId(knowledgeBase.getId());
+        newRecord.setKbUuid((knowledgeBase.getUuid()));
+        newRecord.setUuid(UuidUtil.createShort());
+        newRecord.setUserId(ThreadContext.getCurrentUserId());
+        baseMapper.insert(newRecord);
+
+        // Re-read the row so database-managed columns (create_time / update_time / is_deleted)
+        // are populated before copying into the DTO.
+        KnowledgeBaseQa fresh = EntityRefreshUtil.refresh(baseMapper, newRecord);
+
+        KbQaDto result = new KbQaDto();
+        BeanUtils.copyProperties(fresh, result);
+        return result;
+    }
+
+    public Page<KbQaDto> search(String kbUuid, String keyword, Integer currentPage, Integer pageSize) {
+        LambdaQueryWrapper<KnowledgeBaseQa> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(KnowledgeBaseQa::getKbUuid, kbUuid);
+        wrapper.eq(KnowledgeBaseQa::getIsDeleted, false);
+        if (Boolean.FALSE.equals(ThreadContext.getCurrentUser().getIsAdmin())) {
+            wrapper.eq(KnowledgeBaseQa::getUserId, ThreadContext.getCurrentUserId());
+        }
+        if (StringUtils.isNotBlank(keyword)) {
+            wrapper.like(KnowledgeBaseQa::getQuestion, keyword);
+        }
+        wrapper.orderByDesc(KnowledgeBaseQa::getUpdateTime);
+        Page<KnowledgeBaseQa> page = baseMapper.selectPage(new Page<>(currentPage, pageSize), wrapper);
+
+        // Batch query LLM call records for token and duration
+        List<Long> qaIds = page.getRecords().stream().map(KnowledgeBaseQa::getId).toList();
+        Map<Long, LLMCallRecord> idToCallRecord = Map.of();
+        if (!qaIds.isEmpty()) {
+            idToCallRecord = llmCallRecordService.listBySource(
+                    LLMCallRecordSourceType.KNOWLEDGE_BASE_QA.getValue(), qaIds)
+                    .stream().collect(Collectors.toMap(LLMCallRecord::getSourceId, r -> r, (a, b) -> a));
+        }
+
+        Map<Long, LLMCallRecord> finalIdToCallRecord = idToCallRecord;
+        Page<KbQaDto> result = new Page<>();
+        MPPageUtil.convertToPage(page, result, KbQaDto.class, (t1, t2) -> {
+            AiModel aiModel = MODEL_ID_TO_OBJ.get(t1.getAiModelId());
+            t2.setAiModelPlatform(null == aiModel ? "" : aiModel.getPlatform());
+            // Fill token and duration from LLM call record
+            LLMCallRecord callRecord = finalIdToCallRecord.get(t1.getId());
+            if (callRecord != null) {
+                t2.setInputTokens(callRecord.getInputTokens());
+                t2.setOutputTokens(callRecord.getOutputTokens());
+                t2.setDuration(callRecord.getDuration());
+            }
+            return t2;
+        });
+        return result;
+    }
+
+    /**
+     * 增加嵌入引用记录
+     *
+     * @param user
+     * @param qaRecordId       qa记录id
+     * @param embeddingToScore
+     */
+    public void createEmbeddingRefs(User user, Long qaRecordId, Map<String, Double> embeddingToScore) {
+        log.info("Updating vector reference, userId:{}, qaRecordId:{}, embeddingToScore.size:{}", user.getId(), qaRecordId, embeddingToScore.size());
+        for (Map.Entry<String, Double> entry : embeddingToScore.entrySet()) {
+            String embeddingId = entry.getKey();
+            KnowledgeBaseQaRefEmbedding recordReference = new KnowledgeBaseQaRefEmbedding();
+            recordReference.setQaRecordId(qaRecordId);
+            recordReference.setEmbeddingId(embeddingId);
+            recordReference.setScore(embeddingToScore.get(embeddingId));
+            recordReference.setUserId(user.getId());
+            knowledgeBaseQaRecordReferenceService.save(recordReference);
+        }
+    }
+
+    /**
+     * 增加图谱引用记录
+     *
+     * @param user
+     * @param qaRecordId
+     * @param graphDto
+     */
+    public void createGraphRefs(User user, Long qaRecordId, RefGraphDto graphDto) {
+        log.info("Updating graph reference, userId:{}, qaRecordId:{}, vertices.Size:{}, edges.size:{}", user.getId(), qaRecordId, graphDto.getVertices().size(), graphDto.getEdges().size());
+        String entities = null == graphDto.getEntitiesFromQuestion() ? "" : String.join(",", graphDto.getEntitiesFromQuestion());
+        Map<String, Object> graphFromStore = new HashMap<>();
+        graphFromStore.put("vertices", graphDto.getVertices());
+        graphFromStore.put("edges", graphDto.getEdges());
+        KnowledgeBaseQaRefGraph refGraph = new KnowledgeBaseQaRefGraph();
+        refGraph.setQaRecordId(qaRecordId);
+        refGraph.setUserId(user.getId());
+        refGraph.setEntitiesFromQuestion(entities);
+        refGraph.setGraphFromStore(JsonUtil.toJson(graphFromStore));
+        knowledgeBaseQaRecordRefGraphService.save(refGraph);
+    }
+
+    public KnowledgeBaseQa getOrThrow(String uuid) {
+        KnowledgeBaseQa exist = ChainWrappers.lambdaQueryChain(baseMapper)
+                .eq(KnowledgeBaseQa::getUuid, uuid)
+                .eq(KnowledgeBaseQa::getIsDeleted, false)
+                .one();
+        if (null == exist) {
+            throw new BaseException(A_DATA_NOT_FOUND);
+        }
+        return exist;
+    }
+
+    public void clearByCurrentUser() {
+        ChainWrappers.lambdaUpdateChain(baseMapper)
+                .eq(KnowledgeBaseQa::getUserId, ThreadContext.getCurrentUserId())
+                .set(KnowledgeBaseQa::getIsDeleted, true)
+                .update();
+    }
+
+    public boolean softDelete(String uuid) {
+        if (Boolean.TRUE.equals(ThreadContext.getCurrentUser().getIsAdmin())) {
+            return ChainWrappers.lambdaUpdateChain(baseMapper)
+                    .eq(KnowledgeBaseQa::getUuid, uuid)
+                    .set(KnowledgeBaseQa::getIsDeleted, true)
+                    .update();
+        }
+        KnowledgeBaseQa exist = ChainWrappers.lambdaQueryChain(baseMapper)
+                .eq(KnowledgeBaseQa::getUuid, uuid)
+                .one();
+        if (null == exist) {
+            throw new BaseException(A_DATA_NOT_FOUND);
+        }
+        return ChainWrappers.lambdaUpdateChain(baseMapper)
+                .eq(KnowledgeBaseQa::getId, exist.getId())
+                .set(KnowledgeBaseQa::getIsDeleted, true)
+                .update();
+    }
+}
