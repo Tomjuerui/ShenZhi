@@ -1,0 +1,78 @@
+server:
+  port: 9999
+  context-path: /
+  servlet:
+    session:
+      timeout: 28800s
+  tomcat:
+    uri-encoding: UTF-8
+
+spring:
+  application:
+    name: AiDeepIn
+  profiles:
+    active: dev
+  mvc:
+    async:
+      request-timeout: 180000
+  jackson:
+    date-format: "yyyy-MM-dd HH:mm:ss"
+    time-zone: "GMT+8"
+    serialization: { write-dates-as-timestamps: false }
+  cache:
+    type: redis
+    redis:
+      key-prefix: 'AUTO_CACHE\:'
+      time-to-live: 1h
+  mail:
+    default-encoding: UTF-8
+    protocol: smtps
+    host: ${ADI_MAIL_HOST:your-email-host}
+    username: ${ADI_MAIL_USERNAME:your-email-username}
+    password: ${ADI_MAIL_PASSWORD:your-email-password}
+    port: 465
+    properties:
+      mail:
+        smtp:
+          ssl:
+            enable: true
+  servlet:
+    multipart:
+      max-file-size: 10MB
+      max-request-size: 20MB
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+mybatis-plus:
+  # Support wildcards * or semicolon separation
+  # 支持统配符 * 或者 ; 分割
+  mapper-locations: classpath*:/mapper/*.xml
+  configuration:
+    map-underscore-to-camel-case: true
+
+adi:
+  host: ${ADI_HOST:localhost}
+  frontend-url: http://www.${adi.host}
+  backend-url: http://www.${adi.host}/api
+  proxy:
+    enable: false
+    host: 127.0.0.1
+    http-port: 1087
+  encrypt:
+    # Encryption key for sensitive database fields, do not disclose
+    # 数据库敏感字段加密的密钥，不要泄露
+    # Using the default key will fail on startup, please replace with your own key (16-char string) or pass via environment variable ADI_ENCRYPT_AES_KEY
+    # 使用默认密钥启动会失败，请先替换为自己的密钥(长度为16的字符串)，或通过环境变量 ADI_ENCRYPT_AES_KEY 传入
+    aes-key: ${ADI_ENCRYPT_AES_KEY:Ap9da0CopbjiKGc1}
+
+local:
+  base-data-path: ${ADI_LOCAL_BASE_DATA_PATH:/data/aideepin}
+  files: ${local.base-data-path}/files/
+  images: ${local.base-data-path}/images/
+  watermark-images: ${local.base-data-path}/mark-images/
+  thumbnails: ${local.base-data-path}/thumbnails/
+  watermark-thumbnails: ${local.base-data-path}/watermark-thumbnails/
+  tmp-images: ${local.base-data-path}/tmp-images/
+  chat-memory: ${local.base-data-path}/chat-memory/
