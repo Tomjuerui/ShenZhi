@@ -4,11 +4,11 @@
 
 -- Install pgvector extension (https://github.com/pgvector/pgvector)
 -- Install Apache AGE extension (https://github.com/apache/age)
--- CREATE EXTENSION IF NOT EXISTS vector;
+CREATE EXTENSION IF NOT EXISTS vector;
 -- CREATE EXTENSION IF NOT EXISTS age;
 
 SET client_encoding = 'UTF8';
-CREATE SCHEMA public;
+CREATE SCHEMA IF NOT EXISTS public;
 
 -- ============================================================
 -- Common: update_time trigger function
@@ -554,6 +554,7 @@ CREATE TABLE adi_user
     quota_by_image_daily            integer                default 0                 not null,
     quota_by_image_monthly          integer                default 0                 not null,
     locale                          character varying(10)  default ''                not null,
+    avatar_file_uuid                character varying(32)  default ''                not null,
     create_time                     timestamp              default CURRENT_TIMESTAMP not null,
     update_time                     timestamp              default CURRENT_TIMESTAMP not null,
     is_deleted                      boolean                default false             not null
@@ -1049,6 +1050,8 @@ create table adi_mcp
     preset_params                jsonb         default '[]'              not null,
     customized_param_definitions jsonb         default '[]'              not null,
     install_type                 varchar(25)   default ''                not null,
+    user_id                      bigint        default 0                 not null,
+    is_public                    boolean       default false             not null,
     website                      varchar(250)  default ''                not null,
     remark                       text          default ''                not null,
     is_enable                    boolean       default false             not null,
@@ -1061,6 +1064,8 @@ COMMENT ON COLUMN adi_mcp.transport_type IS 'Transport type: sse, streamable_htt
 COMMENT ON COLUMN adi_mcp.preset_params IS 'Admin-preset parameters, e.g., [{"name":"BAIDU_MAP_API_KEY","title":"Baidu Map Service","value":"111111","require_encrypt":true,"encrypted":true}]';
 COMMENT ON COLUMN adi_mcp.customized_param_definitions IS 'User-configurable parameter definitions, merged with preset_params at runtime, e.g., [{"name":"GITHUB_TOKEN","title":"GitHub access token","require_encrypt":true}]';
 COMMENT ON COLUMN adi_mcp.install_type IS 'Installation type: docker, local, remote, wasm';
+COMMENT ON COLUMN adi_mcp.user_id IS 'Owner user id; 0 means admin-preset/system MCP';
+COMMENT ON COLUMN adi_mcp.is_public IS 'Whether a user-created MCP is public to all users';
 COMMENT ON COLUMN adi_mcp.remark IS 'Supports markdown format';
 COMMENT ON COLUMN adi_mcp.website IS 'Official website';
 
