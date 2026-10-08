@@ -52,4 +52,6 @@ public class McpAddOrEditReq {
     private String remark;
 
     private Boolean isEnable;
+
+    private Boolean isPublic;
 }

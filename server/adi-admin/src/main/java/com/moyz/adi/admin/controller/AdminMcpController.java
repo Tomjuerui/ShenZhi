@@ -28,7 +28,7 @@ public class AdminMcpController {
     @Operation(summary = "搜索列表 | Search List")
     @PostMapping(value = "/search")
     public Page<Mcp> search(@RequestBody McpSearchReq req, @NotNull @Min(1) Integer currentPage, @NotNull @Min(10) Integer pageSize) {
-        return mcpService.search(req, currentPage, pageSize, true);
+        return mcpService.search(req, currentPage, pageSize, true, false);
     }
 
     @PostMapping("/add")

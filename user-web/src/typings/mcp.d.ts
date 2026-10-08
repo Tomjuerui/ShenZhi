@@ -35,6 +35,8 @@ declare namespace Mcp {
     website: string
     remark: string
     isEnable: boolean
+    userId: string
+    isPublic: boolean
 
     // 前端增加字段
     // 当前用户是否配置了该MCP
@@ -62,6 +64,19 @@ declare namespace Mcp {
     mcpId: string
     mcpCustomizedParams: McpCustomizedParam[]
     isEnable: boolean
+  }
+
+  interface McpAddReq {
+    uuid?: string
+    title: string
+    transportType: string
+    sseUrl: string
+    sseTimeout: number
+    stdioCommand: string
+    stdioArg: string
+    installType: string
+    remark: string
+    isPublic: boolean
   }
 
   interface McpInfoListResp {

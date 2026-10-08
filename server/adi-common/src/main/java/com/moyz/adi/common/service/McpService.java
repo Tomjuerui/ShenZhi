@@ -1,8 +1,10 @@
 package com.moyz.adi.common.service;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.baomidou.mybatisplus.extension.toolkit.ChainWrappers;
+import com.moyz.adi.common.base.ThreadContext;
 import com.moyz.adi.common.dto.mcp.McpAddOrEditReq;
 import com.moyz.adi.common.dto.mcp.McpCommonParam;
 import com.moyz.adi.common.dto.mcp.McpSearchReq;
@@ -47,14 +49,17 @@ public class McpService extends ServiceImpl<McpMapper, Mcp> {
         return decryptEnv(result, decryptEnv);
     }
 
-    public Page<Mcp> search(McpSearchReq req, Integer currentPage, Integer pageSize, boolean decryptEnv) {
-        Page<Mcp> page = this.lambdaQuery()
-                .like(StringUtils.isNotBlank(req.getTitle()), Mcp::getTitle, req.getTitle())
+    public Page<Mcp> search(McpSearchReq req, Integer currentPage, Integer pageSize, boolean decryptEnv, boolean publicOnly) {
+        LambdaQueryWrapper<Mcp> wrapper = new LambdaQueryWrapper<>();
+        wrapper.like(StringUtils.isNotBlank(req.getTitle()), Mcp::getTitle, req.getTitle())
                 .eq(StringUtils.isNotBlank(req.getInstallType()), Mcp::getInstallType, req.getInstallType())
                 .eq(StringUtils.isNotBlank(req.getTransportType()), Mcp::getTransportType, req.getTransportType())
                 .eq(null != req.getIsEnable(), Mcp::getIsEnable, req.getIsEnable())
-                .orderByDesc(Mcp::getUpdateTime)
-                .page(new Page<>(currentPage, pageSize));
+                .orderByDesc(Mcp::getUpdateTime);
+        if (publicOnly) {
+            wrapper.and(w -> w.eq(Mcp::getUserId, 0L).or().eq(Mcp::getIsPublic, true));
+        }
+        Page<Mcp> page = this.page(new Page<>(currentPage, pageSize), wrapper);
         for (Mcp mcp : page.getRecords()) {
             decryptEnv(mcp, decryptEnv);
         }
@@ -92,6 +97,48 @@ public class McpService extends ServiceImpl<McpMapper, Mcp> {
     }
 
     public void softDelete(String uuid) {
+        PrivilegeUtil.checkAndDelete(uuid, this.query(), this.update(), A_MCP_SERVER_NOT_FOUND);
+    }
+
+    /**
+     * 用户自建MCP：新增或更新，归属为当前登录用户
+     */
+    public Mcp addOrUpdateUserOwn(McpAddOrEditReq addOrEditReq, boolean decryptEnv) {
+        Mcp result;
+        if (StringUtils.isBlank(addOrEditReq.getUuid())) {
+            Mcp mcp = new Mcp();
+            BeanUtils.copyProperties(addOrEditReq, mcp);
+            mcp.setUuid(UuidUtil.createShort());
+            mcp.setUserId(ThreadContext.getCurrentUserId());
+            encryptEnv(mcp.getPresetParams());
+            this.save(mcp);
+            result = mcp;
+        } else {
+            Mcp mcp = getOwnOrThrow(addOrEditReq.getUuid());
+            Mcp updateObj = new Mcp();
+            BeanUtils.copyProperties(addOrEditReq, updateObj, "id", "uuid");
+            encryptEnv(updateObj.getPresetParams());
+            updateObj.setId(mcp.getId());
+            updateObj.setUserId(mcp.getUserId());
+            this.updateById(updateObj);
+            result = updateObj;
+        }
+        return decryptEnv(result, decryptEnv);
+    }
+
+    public Mcp getOwnOrThrow(String uuid) {
+        return PrivilegeUtil.checkAndGetByUuid(uuid, this.query(), A_MCP_SERVER_NOT_FOUND);
+    }
+
+    public List<Mcp> listUserOwn(Long userId) {
+        return this.lambdaQuery()
+                .eq(Mcp::getUserId, userId)
+                .eq(Mcp::getIsDeleted, false)
+                .orderByDesc(Mcp::getUpdateTime)
+                .list();
+    }
+
+    public void softDeleteUserOwn(String uuid) {
         PrivilegeUtil.checkAndDelete(uuid, this.query(), this.update(), A_MCP_SERVER_NOT_FOUND);
     }
 

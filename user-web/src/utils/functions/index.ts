@@ -300,6 +300,17 @@ export function getRealFileUrl(fileUrl: string) {
     return fileUrl
 }
 
+/**
+ * 头像地址统一出口。
+ * 服务端 /user/avatar/{uuid} 响应带 1 年 Cache-Control，因此有上传头像时必须拼上 file uuid
+ * 做缓存击穿，否则浏览器会一直显示旧图。
+ */
+export function resolveAvatarUrl(userInfo?: User.Profile) {
+  const base = `/api/user/avatar/${userInfo?.uuid || 1}?width=128&height=128`
+  const version = userInfo?.avatarFileUuid
+  return version ? `${base}&v=${version}` : base
+}
+
 export function emptyQuota(): User.Config {
   return {
     userQuota: {
@@ -355,6 +366,8 @@ export function emptyMcp(): Mcp.McpInfo {
     website: '',
     remark: '',
     isEnable: false,
+    userId: '',
+    isPublic: false,
     configured: false, // 是否已配置
   }
 }
@@ -369,6 +382,41 @@ export function emptyUserMcp(): Mcp.UserMcp {
     isEnable: false,
     mcpInfo: emptyMcp(), // mcp信息
   }
+}
+
+/**
+ * 去除 markdown 语法，用于卡片列表的纯文本描述展示
+ */
+export function stripMarkdown(md: string): string {
+  if (!md)
+    return ''
+  return md
+    .replace(/```[\s\S]*?```/g, ' ')
+    .replace(/`([^`]*)`/g, '$1')
+    .replace(/!\[[^\]]*\]\([^)]*\)/g, ' ')
+    .replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^>\s?/gm, '')
+    .replace(/^[-*+]\s+/gm, '')
+    .replace(/^\d+\.\s+/gm, '')
+    .replace(/\*\*([^*]*)\*\*/g, '$1')
+    .replace(/\*([^*]*)\*/g, '$1')
+    .replace(/__([^_]*)__/g, '$1')
+    .replace(/_([^_]*)_/g, '$1')
+    .replace(/<[^>]+>/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * 传输类型展示标签
+ */
+export function mcpTransportLabel(transportType: string): string {
+  if (transportType === 'streamable_http')
+    return 'Streamable HTTP'
+  if (transportType === 'stdio')
+    return 'STDIO'
+  return transportType ? transportType.toUpperCase() : ''
 }
 
 export function changeFileUrlToUuid(fileUrl: string) {

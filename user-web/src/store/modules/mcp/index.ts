@@ -31,6 +31,10 @@ export const useMcpStore = defineStore('mcp-store', {
       })
     },
 
+    clearMyUserMcpList() {
+      this.myUserMcpList = []
+    },
+
     setLoading(loading: boolean) {
       this.loading = loading
     },

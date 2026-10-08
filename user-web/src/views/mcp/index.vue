@@ -8,6 +8,8 @@ import mdKatex from '@traptitech/markdown-it-katex'
 import mila from 'markdown-it-link-attributes'
 import McpInfoList from './McpInfoList.vue'
 import UserMcpList from './UserMcpList.vue'
+import OwnMcpList from './OwnMcpList.vue'
+import AddMcpModal from './AddMcpModal.vue'
 import { t } from '@/locales'
 import { useAuthStore, useMcpStore } from '@/store'
 import { ApiKeyModal, SvgIcon } from '@/components/common'
@@ -25,6 +27,10 @@ const selectedUserMcp = ref<Mcp.UserMcp>(emptyUserMcp())
 const publicOrUser = ref<string>('serversView')
 const loaddingBar = useLoadingBar()
 const selectedTab = ref<string>('configTab')
+const ownListRef = ref()
+const mcpInfoListRef = ref()
+const showAddModal = ref<boolean>(false)
+const editMcp = ref<Mcp.McpInfo | null>(null)
 
 function renderIcon(icon: string) {
   return () => h(SvgIcon, { icon, class: 'text-base cursor-pointer' })
@@ -123,6 +129,25 @@ async function loadMyUserMcpList(showLoaddingBar = true) {
   }
 }
 
+function onShowAddModal() {
+  if (!authStore.checkLoginOrShow())
+    return
+  editMcp.value = null
+  showAddModal.value = true
+}
+
+function onEditOwnMcp(mcp: Mcp.McpInfo) {
+  editMcp.value = mcp
+  showAddModal.value = true
+}
+
+async function refreshAfterChange() {
+  mcpStore.clearMyUserMcpList()
+  await loadMyUserMcpList(false)
+  ownListRef.value?.loadOwnList(false)
+  mcpInfoListRef.value?.reload()
+}
+
 watch(
   () => authStore.token,
   () => {
@@ -135,8 +160,8 @@ watch(
 
 <template>
   <div class="flex flex-col w-full h-full">
-    <header class="left-0 top-0 z-30 border-b dark:border-neutral-800 bg-white/80 dark:bg-black/20 backdrop-blur">
-      <div class="relative flex items-center justify-between max-w-screen-xl px-4 m-auto h-10">
+    <header class="left-0 top-0 z-30">
+      <div class="relative flex items-center justify-between max-w-ds px-4 m-auto h-10">
         <div class="flex items-center flex-col mx-2">
           <NRadioGroup v-model:value="publicOrUser" name="displayStyleRadioGroup" size="small">
             <NRadio value="serversView">
@@ -145,9 +170,18 @@ watch(
             <NRadio value="userView">
               {{ t('mcp.myTools') }}
             </NRadio>
+            <NRadio value="ownView">
+              {{ t('mcp.myAdded') }}
+            </NRadio>
           </NRadioGroup>
         </div>
-        <div class="flex items-center">
+        <div class="flex items-center gap-2">
+          <NButton size="small" type="primary" @click="onShowAddModal">
+            <template #icon>
+              <SvgIcon icon="ri:add-line" />
+            </template>
+            {{ t('mcp.addTool') }}
+          </NButton>
           <NDropdown :options="menuOptions" trigger="click" @select="handleMenuSelect">
             <NButton quaternary circle size="small">
               <template #icon>
@@ -159,20 +193,24 @@ watch(
       </div>
     </header>
 
-    <main class="flex-1 overflow-y-auto h-full w-full max-w-screen-xl m-auto">
+    <main class="flex-1 overflow-y-auto h-full w-full max-w-ds m-auto px-4">
       <McpInfoList
-        v-show="publicOrUser === 'serversView'" @show-info-modal="onShowInfoModal"
+        ref="mcpInfoListRef" v-show="publicOrUser === 'serversView'" @show-info-modal="onShowInfoModal"
         @show-config-modal="onShowConfigModal"
       />
       <UserMcpList
         v-show="publicOrUser === 'userView'" @show-info-modal="onShowInfoModal"
         @show-config-modal="onShowConfigModal"
       />
+      <OwnMcpList
+        ref="ownListRef" v-show="publicOrUser === 'ownView'" @add="onShowAddModal" @edit="onEditOwnMcp"
+        @changed="refreshAfterChange"
+      />
     </main>
 
     <NModal v-model:show="showConfigModal" style="width: 90%; max-width: 1000px;" preset="card">
       <template #header>
-        <h2 class="text-xl font-bold">
+        <h2 class="text-xl font-bold text-ds-text">
           {{ selectedMcp.title }}-<span v-if="selectedTab === 'configTab'">{{ t('mcp.configLabel') }}</span><span
             v-if="selectedTab === 'introTab'"
           >{{ t('mcp.introLabel') }}</span>
@@ -196,7 +234,7 @@ watch(
             </NAlert>
             <div v-if="selectedMcp.customizedParamDefinitions.length > 0" class="flex flex-col space-y-2">
               <div class="font-bold text-base">
-                {{ t('mcp.serviceParam') }}<span class="text-sm text-gray-500">{{ t('mcp.pleaseReferIntroConfig') }}</span>
+                {{ t('mcp.serviceParam') }}<span class="text-sm text-ds-muted">{{ t('mcp.pleaseReferIntroConfig') }}</span>
               </div>
               <NTable :bordered="false" :single-line="false">
                 <thead>
@@ -257,6 +295,8 @@ watch(
         </NTabPane>
       </NTabs>
     </NModal>
+
+    <AddMcpModal v-model:show="showAddModal" :mcp="editMcp" @saved="refreshAfterChange" />
 
     <ApiKeyModal v-model:show="showApiKeyModal" type="mcp" uuid="" :title="t('mcp.title')" />
   </div>

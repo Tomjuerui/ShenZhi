@@ -59,6 +59,14 @@ public class Mcp extends BaseEntity {
     @TableField(value = "install_type")
     private String installType;
 
+    @Schema(title = "创建者用户ID,0表示系统预设 | Owner user id, 0 means admin-preset/system MCP")
+    @TableField(value = "user_id")
+    private Long userId;
+
+    @Schema(title = "是否公用 | Whether a user-created MCP is public to all users")
+    @TableField(value = "is_public")
+    private Boolean isPublic;
+
     @Schema(title = "网址 | Website")
     @TableField(value = "website")
     private String website;

@@ -28,7 +28,7 @@ public class McpController {
     @Operation(summary = "搜索列表 | Search List")
     @GetMapping(value = "/public/search")
     public Page<Mcp> search(@RequestParam String keyword, @NotNull @Min(1) Integer currentPage, @NotNull @Min(10) Integer pageSize) {
-        return mcpService.search(McpSearchReq.builder().title(keyword).build(), currentPage, pageSize, false);
+        return mcpService.search(McpSearchReq.builder().title(keyword).build(), currentPage, pageSize, false, true);
     }
 
     @Operation(summary = "MCP列表 | MCP List")

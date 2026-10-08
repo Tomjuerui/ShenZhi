@@ -366,6 +366,18 @@ function fileUpload<T = any>(file: File) {
   })
 }
 
+function imageUpload<T = any>(file: File) {
+  const formData = new FormData()
+  formData.append('file', file)
+  return post<T>({
+    url: '/image/upload',
+    data: formData,
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  })
+}
+
 function fileDel<T = any>(uuid: string) {
   return post<T>({
     url: `/file/del/${uuid}`,
@@ -757,6 +769,32 @@ function userMcpSaveOrUpdate<T = any>(data: Mcp.UserMcpUpdateReq) {
   })
 }
 
+function userMcpOwnList<T = any>() {
+  return get<T>({
+    url: '/user/mcp/ownList',
+  })
+}
+
+function userMcpAdd<T = any>(data: Mcp.McpAddReq) {
+  return post<T>({
+    url: '/user/mcp/add',
+    data,
+  })
+}
+
+function userMcpEdit<T = any>(data: Mcp.McpAddReq) {
+  return post<T>({
+    url: '/user/mcp/edit',
+    data,
+  })
+}
+
+function userMcpDel<T = any>(uuid: string) {
+  return post<T>({
+    url: `/user/mcp/del/${uuid}`,
+  })
+}
+
 // External API Key management (resource-level)
 function extApiKeyGenerate<T = any>(type: string, uuid: string) {
   return post<T>({ url: `/external-api-key/${type}/${uuid}` })
@@ -806,6 +844,7 @@ export default {
   promptEdit,
   promptAutocomplete,
   fileUpload,
+  imageUpload,
   fileDel,
   fetchDraw,
   fetchNewerPublicDraw,
@@ -877,6 +916,10 @@ export default {
   mcpSearch,
   userMcpList,
   userMcpSaveOrUpdate,
+  userMcpOwnList,
+  userMcpAdd,
+  userMcpEdit,
+  userMcpDel,
   extApiKeyGenerate,
   extApiKeyInfo,
   extApiKeyReveal,

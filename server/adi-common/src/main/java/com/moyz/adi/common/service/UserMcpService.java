@@ -26,6 +26,7 @@ import dev.langchain4j.mcp.client.transport.http.StreamableHttpMcpTransport;
 import dev.langchain4j.mcp.client.transport.stdio.StdioMcpTransport;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
@@ -34,6 +35,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 
 import static com.moyz.adi.common.enums.ErrorEnum.A_USER_MCP_SERVER_NOT_FOUND;
@@ -42,6 +44,12 @@ import static java.util.stream.Collectors.toMap;
 @Slf4j
 @Service
 public class UserMcpService extends ServiceImpl<UserMcpMapper, UserMcp> {
+
+    /**
+     * stdio MCP 只允许通过这两个包管理器启动，避免用户把 stdio_command 写成任意系统命令（如 sh/rm）。
+     * 注意：这只是「防直接执行系统命令」的绊线，npx/uvx 本身仍会下载并运行任意包——真正的隔离需走独立 runner 容器。
+     */
+    private static final Set<String> STDIO_ALLOWED_COMMANDS = Set.of("npx", "uvx");
 
     @Resource
     private McpService mcpService;
@@ -82,6 +90,9 @@ public class UserMcpService extends ServiceImpl<UserMcpMapper, UserMcp> {
                     .filter(item -> item.getId().equals(dto.getMcpId()))
                     .findFirst()
                     .orElse(null);
+            if (mcp == null) {
+                continue;
+            }
             setMcpInfo(dto, mcp);
             dtoList.add(dto);
         }
@@ -112,6 +123,9 @@ public class UserMcpService extends ServiceImpl<UserMcpMapper, UserMcp> {
                     .filter(item -> item.getId().equals(dto.getMcpId()))
                     .findFirst()
                     .orElse(null);
+            if (mcp == null) {
+                continue;
+            }
             setMcpInfo(dto, mcp);
             dtoList.add(dto);
         }
@@ -213,9 +227,15 @@ public class UserMcpService extends ServiceImpl<UserMcpMapper, UserMcp> {
                         .logResponses(true)
                         .build();
             } else {
+                List<String> command = buildStdioCommand(mcp);
+                if (command.isEmpty()) {
+                    log.warn("Rejected stdio MCP by whitelist, mcpId: {}, title: {}, command: {}, arg: {}",
+                            mcp.getId(), mcp.getTitle(), mcp.getStdioCommand(), mcp.getStdioArg());
+                    continue;
+                }
                 Map<String, String> environment = createEnvironment(mcp, userMcp);
                 transport = new StdioMcpTransport.Builder()
-                        .command(List.of(mcp.getStdioCommand(), mcp.getStdioArg()))
+                        .command(command)
                         .environment(environment)
                         .build();
             }
@@ -333,6 +353,42 @@ public class UserMcpService extends ServiceImpl<UserMcpMapper, UserMcp> {
             return baseUrl;
         }
         return baseUrl + (baseUrl.contains("?") ? "&" : "?") + queryParam;
+    }
+
+    /**
+     * 构造 stdio 启动命令：校验白名单 + 把 stdio_arg 按空白拆成 argv。
+     * 校验不通过返回空列表，调用方跳过该 MCP。
+     *
+     * @param mcp MCP对象
+     * @return 拆分后的 argv（首元素为启动命令）；非法时返回空列表
+     */
+    private List<String> buildStdioCommand(Mcp mcp) {
+        String command = StringUtils.trimToEmpty(mcp.getStdioCommand());
+        if (!STDIO_ALLOWED_COMMANDS.contains(command)) {
+            return List.of();
+        }
+        List<String> argv = new ArrayList<>();
+        argv.add(command);
+        String arg = StringUtils.trimToEmpty(mcp.getStdioArg());
+        if (!arg.isEmpty()) {
+            for (String token : arg.split("\\s+")) {
+                if (isForbiddenArg(token)) {
+                    return List.of();
+                }
+                argv.add(token);
+            }
+        }
+        return argv;
+    }
+
+    /**
+     * 拦截 npx/uvx 的命令执行标志与 shell 元字符。
+     * ProcessBuilder 不走 shell，元字符本不会被解释，这里属于防御性拦截。
+     */
+    private boolean isForbiddenArg(String token) {
+        return token.equals("-c") || token.equals("--call") || token.equals("-p") || token.equals("--package")
+                || token.contains(";") || token.contains("|") || token.contains("&")
+                || token.contains("`") || token.contains("$");
     }
 
 
