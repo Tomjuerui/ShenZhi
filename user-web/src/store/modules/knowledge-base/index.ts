@@ -87,8 +87,10 @@ export const useKbStore = defineStore('kb-store', {
     },
     appendRecord(kbUuid: string, record: KnowledgeBase.QaRecordInfo) {
       let existRecords = this.kbUuidToQaRecords.get(kbUuid)
-      if (!existRecords)
+      if (!existRecords) {
         existRecords = []
+        this.kbUuidToQaRecords.set(kbUuid, existRecords)
+      }
       existRecords.forEach(item => item.loading = false)
       existRecords.push(record)
     },

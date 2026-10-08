@@ -155,8 +155,8 @@ export const useAppStore = defineStore('app-store', {
         item.value = item.modelId
       })
       this.llms = llms
-      if (this.selectedLLM.modelId === 'default') {
-        const selectedModel = this.llms.find(item => item.enable)
+      if (!this.selectedLLM.modelId || this.selectedLLM.modelId === 'default') {
+        const selectedModel = this.llms.find(item => item.enable && item.healthStatus !== 'UNHEALTHY')
         if (selectedModel)
           this.selectedLLM = selectedModel
       }
@@ -170,7 +170,7 @@ export const useAppStore = defineStore('app-store', {
         item.value = item.modelName
       })
       this.imageModels = imageModels
-      if (this.selectedImageModel.modelId === 'default') {
+      if (!this.selectedImageModel.modelId || this.selectedImageModel.modelId === 'default') {
         const selectedModel = this.imageModels.find(item => item.enable)
         if (selectedModel)
           this.selectedImageModel = selectedModel
