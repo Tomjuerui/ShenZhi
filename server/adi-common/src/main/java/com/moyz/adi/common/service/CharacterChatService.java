@@ -377,6 +377,11 @@ public class CharacterChatService {
                 .oneOpt()
                 .orElseGet(() -> characterService.createByFirstMessage(user.getId(), characterUuid, prompt));
         AiModel aiModel = LLMContext.getAiModel(modelPlatform, modelName);
+        if (null == aiModel) {
+            // 与流式回复的解析口径对齐：流式走 getServiceByPlatformAndModel(..., useDefault=true) 回退，
+            // 持久化必须记录「实际回答问题」的那个模型，否则二者不一致
+            aiModel = LLMContext.getServiceOrDefault(modelPlatform, modelName).getAiModel();
+        }
 
         //Check if regenerate question
         CharacterMessage promptMsg;

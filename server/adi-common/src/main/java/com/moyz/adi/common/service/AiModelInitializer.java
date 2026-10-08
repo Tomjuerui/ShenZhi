@@ -83,7 +83,7 @@ public class AiModelInitializer {
 
 // OpenAI API compatible model
         // OpenAi api 兼容模型
-        initOpenAiCompatibleService(nameToPlatform, (model, modelPlatformName) -> new OpenAiCompatibleLLMService(model, nameToPlatform.get(modelPlatformName)).setProxyAddress(proxyAddress));
+        initOpenAiCompatibleService(nameToPlatform, modelType, (model, modelPlatformName) -> new OpenAiCompatibleLLMService(model, nameToPlatform.get(modelPlatformName)).setProxyAddress(proxyAddress));
 
         //deepseek
         initLLMService(AdiConstant.ModelPlatform.DEEPSEEK, modelType, model -> new DeepSeekLLMService(model, nameToPlatform.get(AdiConstant.ModelPlatform.DEEPSEEK)).setProxyAddress(proxyAddress));
@@ -150,11 +150,11 @@ public class AiModelInitializer {
         }
     }
 
-    private void initOpenAiCompatibleService(Map<String, ModelPlatform> nameToPlatform, BiFunction<AiModel, String, AbstractLLMService> function) {
+    private void initOpenAiCompatibleService(Map<String, ModelPlatform> nameToPlatform, String modelType, BiFunction<AiModel, String, AbstractLLMService> function) {
         log.info("init openai api compatible llm model");
         List<String> compatiblePlatforms = nameToPlatform.values().stream().filter(ModelPlatform::getIsOpenaiApiCompatible).map(ModelPlatform::getName).toList();
         for (String platform : compatiblePlatforms) {
-            List<AiModel> models = all.stream().filter(item -> item.getType().equals(TEXT) && item.getPlatform().equals(platform)).toList();
+            List<AiModel> models = all.stream().filter(item -> item.getType().equals(modelType) && item.getPlatform().equals(platform)).toList();
             if (CollectionUtils.isEmpty(models)) {
                 log.warn("{} service is disabled", Joiner.on(",").join(compatiblePlatforms));
             }
