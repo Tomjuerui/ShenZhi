@@ -43,3 +43,10 @@ node_modules/
 dist/
 pnpm-debug.log*
 .env.local
+
+### Local RAG corpus / data-prep scripts / docs ###
+/data/
+/kb_txt/
+/scripts/
+/docx/*
+!/docx/screenshots/
