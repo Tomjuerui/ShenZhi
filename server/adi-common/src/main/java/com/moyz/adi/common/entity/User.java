@@ -63,4 +63,8 @@ public class User extends BaseEntity {
     @Schema(name = "User locale preference, empty string means follow global setting")
     @TableField(value = "locale")
     private String locale = "";
+
+    @Schema(name = "Uploaded avatar file uuid (adi_file.uuid); empty = system generated avatar")
+    @TableField("avatar_file_uuid")
+    private String avatarFileUuid;
 }

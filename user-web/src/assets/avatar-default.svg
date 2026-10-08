@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="128" height="128" viewBox="0 0 128 128" role="img" aria-label="默认头像">
+  <defs>
+    <clipPath id="ds-avatar-clip"><circle cx="64" cy="64" r="64"/></clipPath>
+  </defs>
+  <g clip-path="url(#ds-avatar-clip)">
+    <rect width="128" height="128" fill="#eef2ff"/>
+    <circle cx="64" cy="49" r="21" fill="#4d6bfe"/>
+    <path d="M64 78c-22.1 0-40 14.3-40 32v18h80v-18c0-17.7-17.9-32-40-32z" fill="#4d6bfe"/>
+  </g>
+</svg>

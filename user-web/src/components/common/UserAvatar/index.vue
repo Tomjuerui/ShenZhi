@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { NAvatar } from 'naive-ui'
 import { useUserStore } from '@/store'
-import defaultAvatar from '@/assets/avatar.jpg'
+import defaultAvatar from '@/assets/avatar-default.svg'
 import { isString } from '@/utils/is'
 
 const userStore = useUserStore()
@@ -16,10 +16,10 @@ const userInfo = computed(() => userStore.userInfo)
       <NAvatar size="large" round :src="userInfo.avatar" :fallback-src="defaultAvatar" />
     </div>
     <div class="flex-1 min-w-0 ml-2">
-      <h2 class="overflow-hidden font-bold text-md text-ellipsis whitespace-nowrap">
-        {{ userInfo.name ?? 'aiDeepIn' }}
+      <h2 class="overflow-hidden font-bold text-md text-ds-text text-ellipsis whitespace-nowrap">
+        {{ userInfo.name ?? '深智' }}
       </h2>
-      <p class="overflow-hidden text-xs text-gray-500 text-ellipsis whitespace-nowrap">
+      <p class="overflow-hidden text-xs text-ds-muted text-ellipsis whitespace-nowrap">
         <span v-if="isString(userInfo.description) && userInfo.description !== ''" v-html="userInfo.description" />
       </p>
     </div>

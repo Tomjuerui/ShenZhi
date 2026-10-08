@@ -6,6 +6,7 @@ import com.moyz.adi.common.dto.ModifyPasswordReq;
 import com.moyz.adi.common.dto.UserUpdateReq;
 import com.moyz.adi.common.entity.User;
 import com.moyz.adi.common.exception.BaseException;
+import com.moyz.adi.common.service.FileService;
 import com.moyz.adi.common.service.UserService;
 import com.talanlabs.avatargenerator.Avatar;
 import com.talanlabs.avatargenerator.cat.CatAvatar;
@@ -17,6 +18,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.http.MediaType;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.*;
@@ -37,6 +39,9 @@ public class UserController {
 
     @Resource
     private UserService userService;
+
+    @Resource
+    private FileService fileService;
 
     @Operation(summary = "用户信息 | User Info")
     @GetMapping("/{uuid}")
@@ -74,7 +79,7 @@ public class UserController {
     public void myAvatar(HttpServletResponse response) {
         User user = ThreadContext.getCurrentUser();
         try {
-            writeToResponse(user.getId(), 64, 64, response);
+            writeToResponse(user, 64, 64, response);
         } catch (IOException e) {
             log.error("load my avatar error", e);
             throw new BaseException(B_IMAGE_LOAD_ERROR);
@@ -85,20 +90,35 @@ public class UserController {
     @GetMapping(value = "/avatar/{uuid}", produces = MediaType.IMAGE_PNG_VALUE)
     public void avatar(@Validated @PathVariable String uuid, @RequestParam(defaultValue = "64") @Min(32) @Max(128) Integer width, @RequestParam(defaultValue = "64") @Min(32) @Max(128) Integer height, HttpServletResponse response) {
         User user = userService.getByUuid(uuid);
-        long userId = 0;
-        if (null != user) {
-            userId = user.getId();
-        }
         try {
-            writeToResponse(userId, width, height, response);
+            writeToResponse(user, width, height, response);
         } catch (IOException e) {
             log.error("load avatar error", e);
             throw new BaseException(B_IMAGE_LOAD_ERROR);
         }
     }
 
-    private void writeToResponse(Long userId, Integer width, Integer height, HttpServletResponse response) throws IOException {
+    /**
+     * 优先返回用户上传的头像；未上传或文件缺失时回落到系统生成头像
+     */
+    private void writeToResponse(User user, Integer width, Integer height, HttpServletResponse response) throws IOException {
         response.setHeader("Cache-Control", "max-age=" + 3600 * 24 * 365);
+        long userId = null == user ? 0L : user.getId();
+
+        // /user/avatar/{uuid} 匿名可访问（要能看别人的头像），因此必须用 readImage
+        // （不过滤登录用户、不要求 token）；readMyImage 会按当前登录用户过滤并强制校验 token
+        if (null != user && StringUtils.isNotBlank(user.getAvatarFileUuid())) {
+            try {
+                BufferedImage uploaded = fileService.readImage(user.getAvatarFileUuid(), false);
+                if (null != uploaded) {
+                    ImageIO.write(uploaded, "png", response.getOutputStream());
+                    return;
+                }
+            } catch (Exception e) {
+                log.warn("read uploaded avatar failed, fallback to generated avatar. uuid={}", user.getAvatarFileUuid(), e);
+            }
+        }
+
         BufferedImage bufferedImage;
         synchronized (AVATAR_LOCK) {
             bufferedImage = CatAvatar.newAvatarBuilder().size(width, height).build().create(userId);

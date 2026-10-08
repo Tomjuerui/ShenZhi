@@ -4,6 +4,7 @@ declare namespace User {
         name?: string
         description?: string
         uuid: string
+        avatarFileUuid?: string
       }
 
     interface UserQuota {
@@ -45,6 +46,7 @@ declare namespace User {
     interface Config{
         secretKey?: string
         locale?: string
+        avatarFileUuid?: string
         userQuota: UserQuota
         quotaCost: QuotaCost
     }

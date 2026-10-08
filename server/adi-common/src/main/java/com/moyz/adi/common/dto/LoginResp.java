@@ -12,4 +12,5 @@ public class LoginResp {
     private String captchaId;
     private String uuid;
     private String locale;
+    private String avatarFileUuid;
 }

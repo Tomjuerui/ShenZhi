@@ -1,26 +1,31 @@
 <script lang="ts" setup>
 import { computed, ref } from 'vue'
-import { NButton, NImage, NSelect, NSpace } from 'naive-ui'
+import { NAvatar, NButton, NSelect, NUpload, useMessage } from 'naive-ui'
+import type { UploadCustomRequestOptions } from 'naive-ui'
 import type { Language, Theme } from '@/store/modules/app/helper'
 import { SvgIcon } from '@/components/common'
 import { useAppStore, useAuthStore, useUserStore } from '@/store'
 import { t } from '@/locales'
+import { resolveAvatarUrl } from '@/utils/functions'
+import { useLogout } from '@/hooks/useLogout'
 import api from '@/api'
-import defaultAvatar from '@/assets/avatar.jpg'
+import defaultAvatar from '@/assets/avatar-default.svg'
 
 const appStore = useAppStore()
 const userStore = useUserStore()
 const authStore = useAuthStore()
+const ms = useMessage()
+const { submitting, logout } = useLogout()
 
 const theme = computed(() => appStore.theme)
 
 const userInfo = computed(() => userStore.userInfo)
 
-const avatar = ref(userInfo.value.avatar ?? '')
+const avatarPreview = ref(userInfo.value.avatar ?? '')
+
+const avatarUploading = ref(false)
 
 const name = ref(userInfo.value.name ?? '')
-
-const submitting = ref(false)
 
 const language = computed({
   get() {
@@ -56,30 +61,56 @@ const languageOptions: { label: string; key: Language; value: Language }[] = [
   { label: 'English', key: 'en-US', value: 'en-US' },
 ]
 
-async function logout() {
-  if (submitting.value)
+async function handleAvatarUpload({ file, onFinish, onError }: UploadCustomRequestOptions) {
+  const raw = file.file
+  if (!raw)
     return
-  submitting.value = true
-  try {
-    await api.logout()
-  } catch (error) {
-    console.error(error)
-  } finally {
-    submitting.value = false
+
+  if (!['image/png', 'image/jpeg', 'image/webp'].includes(raw.type)) {
+    ms.error(t('setting.avatarTypeError'))
+    onError()
+    return
   }
-  authStore.removeToken()
-  userStore.resetUserInfo()
-  window.location.reload()
+  if (raw.size > 2 * 1024 * 1024) {
+    ms.error(t('setting.avatarSizeError'))
+    onError()
+    return
+  }
+
+  avatarUploading.value = true
+  try {
+    const { data } = await api.imageUpload<{ uuid: string; url: string }>(raw)
+    await api.userEdit({ avatarFileUuid: data.uuid } as User.Config)
+    userStore.updateUserInfo({ avatarFileUuid: data.uuid })
+    avatarPreview.value = resolveAvatarUrl({ ...userInfo.value, avatarFileUuid: data.uuid })
+    ms.success(t('setting.avatarUpdated'))
+    onFinish()
+  } catch (error: any) {
+    console.error('avatar upload error', error)
+    ms.error(error?.message ?? t('setting.avatarUpdateFailed'))
+    onError()
+  } finally {
+    avatarUploading.value = false
+  }
 }
 </script>
 
 <template>
-  <div class="p-4 space-y-5 min-h-[200px]">
+  <div class="p-5 space-y-6 min-h-[200px]">
     <div class="space-y-6">
-      <div class="flex items-center space-x-4">
-        <NSpace justify="center" class="w-[100%]">
-          <NImage :src="avatar" :fallback-src="defaultAvatar" preview-disabled />
-        </NSpace>
+      <div class="flex flex-col items-center gap-3">
+        <NAvatar round :size="72" :src="avatarPreview" :fallback-src="defaultAvatar" />
+        <NUpload
+          :show-file-list="false" accept="image/png,image/jpeg,image/webp"
+          :custom-request="handleAvatarUpload"
+        >
+          <NButton size="small" :loading="avatarUploading">
+            {{ t('setting.changeAvatar') }}
+          </NButton>
+        </NUpload>
+        <p class="text-xs text-ds-muted">
+          {{ t('setting.avatarHint') }}
+        </p>
       </div>
       <div class="flex items-center space-x-4">
         <span class="flex-shrink-0 w-[100px]">{{ t('setting.name') }}</span>

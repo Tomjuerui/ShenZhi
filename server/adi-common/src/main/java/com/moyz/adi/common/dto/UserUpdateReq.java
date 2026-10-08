@@ -8,4 +8,5 @@ import lombok.Data;
 public class UserUpdateReq {
     private String secretKey;
     private String locale;
+    private String avatarFileUuid;
 }
