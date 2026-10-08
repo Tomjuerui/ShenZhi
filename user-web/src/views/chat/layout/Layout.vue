@@ -1,55 +1,37 @@
 <script setup lang='ts'>
-import { computed } from 'vue'
-import { NLayout, NLayoutContent } from 'naive-ui'
+import { computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import Sider from './sider/index.vue'
-import { useBasicLayout } from '@/hooks/useBasicLayout'
-import { useAppStore, useChatStore } from '@/store'
+import { useAuthStore } from '@/store'
+import { useConvList } from '@/views/chat/hooks/useConvList'
 
 const route = useRoute()
 const router = useRouter()
-const appStore = useAppStore()
-const chatStore = useChatStore()
+const authStore = useAuthStore()
+const { syncByRoute } = useConvList()
 
-const { uuid: curCharacterUuid } = route.params as { uuid: string }
-console.log(`curCharacterUuid:${curCharacterUuid}`)
-if (!curCharacterUuid) {
-  console.log(`uuid,chatStore.active:${chatStore.active}`)
-  router.replace({ name: 'Chat', params: { uuid: chatStore.active } })
-} else if (curCharacterUuid !== chatStore.active) {
-  console.log(`curCharacterUuid !== chatStore.active:${chatStore.active}`)
-  chatStore.setActive(curCharacterUuid)
-}
+const isChatRoute = computed(() => ['Root', 'Chat', 'ChatDetail'].includes(route.name as string))
 
-const { isMobile } = useBasicLayout()
-
-const collapsed = computed(() => appStore.siderCollapsed)
-
-const getMobileClass = computed(() => {
-  if (isMobile.value)
-    return ['rounded-none', 'shadow-none']
-  return ['rounded-md', 'dark:border-neutral-800']
-})
-
-const getContainerClass = computed(() => {
-  return [
-    'h-full',
-    { 'pl-[260px]': !isMobile.value && !collapsed.value },
-  ]
-})
+// token 就绪 / 聊天路由 uuid 变化时同步：会话列表 → active → 首页消息（收起侧栏也生效）
+watch(
+  () => [authStore.token, route.name, route.params.uuid] as const,
+  async ([token, name]) => {
+    // 只在聊天路由下动作：否则离开聊天页时会把自己又弹回来
+    if (!token || !['Root', 'Chat', 'ChatDetail'].includes(name as string))
+      return
+    const uuid = await syncByRoute()
+    if (!isChatRoute.value)
+      return
+    if (uuid && uuid !== route.params.uuid)
+      router.replace({ name: 'ChatDetail', params: { uuid } })
+  },
+  { immediate: true },
+)
 </script>
 
 <template>
-  <div class="h-full dark:bg-[#24272e] transition-all" :class="[isMobile ? 'p-0' : '']">
-    <div class="h-full overflow-hidden" :class="getMobileClass">
-      <NLayout class="z-40 transition" :class="getContainerClass" has-sider>
-        <Sider />
-        <NLayoutContent class="h-full">
-          <RouterView v-slot="{ Component, route }">
-            <KeepAlive><component :is="Component" :key="route.fullPath" /></KeepAlive>
-          </RouterView>
-        </NLayoutContent>
-      </NLayout>
-    </div>
+  <div class="h-full w-full overflow-hidden bg-ds-bg">
+    <RouterView v-slot="{ Component, route }">
+      <KeepAlive><component :is="Component" :key="route.fullPath" /></KeepAlive>
+    </RouterView>
   </div>
 </template>

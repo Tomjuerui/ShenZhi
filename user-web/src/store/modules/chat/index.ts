@@ -168,6 +168,15 @@ export const useChatStore = defineStore('chat-store', {
       return await this.reloadRoute(uuid)
     },
 
+    /** 只切 active，不做路由跳转（与 Layout 的路由同步配合，避免互相触发） */
+    setActiveOnly(uuid: string) {
+      this.active = uuid
+    },
+
+    setConvListLoaded(loaded: boolean) {
+      this.convListLoaded = loaded
+    },
+
     getMsgsByCharacterAndIndex(uuid: string, index: number) {
       if (!uuid) {
         if (this.chats.length)

@@ -15,6 +15,7 @@ export function defaultState(): Chat.ChatState {
     characters: [defaultCharacter],
     chats: [{ uuid: defaultCharacter.uuid, data: [] }],
     loadingMsgs: new Set<string>(),
+    convListLoaded: false,
     msgToMemoryRef: new Map<string, Chat.MemoryEmbedding[]>(),
     msgToEmbeddingRef: new Map<string, KnowledgeBase.QaRecordEmbeddingRef[]>(),
     msgToGraphRef: new Map<string, KnowledgeBase.QaRecordGraphRef>(),

@@ -1,25 +1,23 @@
 <script setup lang='ts'>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, ref } from 'vue'
 import { NScrollbar } from 'naive-ui'
-import { useRoute } from 'vue-router'
 import { SvgIcon } from '@/components/common'
 import { useAppStore, useAuthStore, useChatStore } from '@/store'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import EditConv from '@/views/chat/components/Header/EditConv.vue'
-import api from '@/api'
+import { useConvList } from '@/views/chat/hooks/useConvList'
 import { t } from '@/locales'
+
 const { isMobile } = useBasicLayout()
-const route = useRoute()
 const appStore = useAppStore()
 const chatStore = useChatStore()
 const authStore = useAuthStore()
-const authStoreRef = ref<AuthState>(authStore)
+const { ensureMessagesLoaded } = useConvList()
 const mouseEnterKbUuid = ref<string>('')
 const showEditModal = ref<boolean>(false)
 const editCharacter = ref<Chat.Character>({} as Chat.Character)
 
 async function handleSelect({ uuid }: Chat.Character) {
-  console.log('click chat', uuid)
   if (isActive(uuid))
     return
 
@@ -27,7 +25,7 @@ async function handleSelect({ uuid }: Chat.Character) {
     chatStore.updateCharacter(chatStore.active, {})
   await chatStore.setActive(uuid)
 
-  await checkAndLoadFirstPageMsgsByCharacter(uuid)
+  await ensureMessagesLoaded(uuid)
 
   if (isMobile.value)
     appStore.setSiderCollapsed(true)
@@ -50,96 +48,64 @@ function isActive(uuid: string) {
   return chatStore.active === uuid
 }
 
-async function fetchHistory() {
-  const { data: characters } = await api.fetchCharacters<Chat.Character[]>()
-  if (characters.length > 0) {
-    chatStore.clearDefault()
-    chatStore.addCharacters(characters)
-
-    const active = route.params.uuid as string
-    console.log('List.vue active', active)
-    if (active === 'default') {
-      await handleSelect(characters[0])
-    } else {
-      // F5刷新页面时
-      await checkAndLoadFirstPageMsgsByCharacter(active)
-    }
-  }
-}
-
-/**
- * 如果会话{uuid}的消息不存在，向服务端请求第一页
- */
-async function checkAndLoadFirstPageMsgsByCharacter(uuid: string) {
-  if (chatStore.loadingMsgs.has(uuid))
-    return
-
-  chatStore.addLoadingMsg(uuid)
-  try {
-    const minMsgUuid = chatStore.getCurCharacter?.minMsgUuid || ''
-    const cacheMessages = chatStore.getMsgsByCharacter(uuid)
-    if (cacheMessages.length === 0) {
-      const { data } = await api.fetchMessages<Chat.CharacterMsgListResp>(uuid, minMsgUuid, 20)
-      data.msgList.forEach((messageRecord) => {
-        chatStore.addMessage(uuid, messageRecord, false)
-      })
-      chatStore.updateCharacter(uuid, { minMsgUuid: data.minMsgUuid, loadedFirstPageMsg: true })
-    }
-  } finally {
-    chatStore.deleteLoadingMsg(uuid)
-  }
-}
-
 const characterList = computed(() => chatStore.characters)
 
-watch(
-  () => authStoreRef.value.token,
-  (newVal) => {
-    if (newVal) {
-      console.log('token change, reaload')
-      fetchHistory()
-    }
-  },
-)
-
-onMounted(() => {
-  console.log('chat list onMounted')
-  if (authStoreRef.value.token)
-    fetchHistory()
+// 按 createTime 的 yyyy-MM 分桶，月份倒序；无时间的归入「更早」
+const groupedCharacters = computed(() => {
+  const buckets = new Map<string, Chat.Character[]>()
+  for (const item of characterList.value) {
+    const month = item.createTime ? item.createTime.slice(0, 7) : 'earlier'
+    const bucket = buckets.get(month)
+    if (bucket)
+      bucket.push(item)
+    else
+      buckets.set(month, [item])
+  }
+  return [...buckets.entries()]
+    .sort(([a], [b]) => {
+      if (a === 'earlier')
+        return 1
+      if (b === 'earlier')
+        return -1
+      return b.localeCompare(a)
+    })
+    .map(([key, items]) => ({ key, label: key === 'earlier' ? t('sidebar.earlier') : key, items }))
 })
 </script>
 
 <template>
   <EditConv v-model:showModal="showEditModal" :character="editCharacter" @show-modal="(show) => showEditModal = show" />
-  <NScrollbar class="px-4">
-    <div class="flex flex-col gap-2 text-sm">
-      <template v-if="!characterList.length">
-        <div class="flex flex-col items-center mt-4 text-center text-neutral-300">
-          <SvgIcon icon="ri:inbox-line" class="mb-2 text-3xl" />
-          <span>{{ t('common.noData') }}</span>
+  <NScrollbar class="px-2">
+    <template v-if="!characterList.length">
+      <div class="flex flex-col items-center mt-4 text-center text-ds-muted">
+        <SvgIcon icon="ri:inbox-line" class="mb-2 text-3xl" />
+        <span>{{ t('common.noData') }}</span>
+      </div>
+    </template>
+    <template v-else>
+      <template v-for="group in groupedCharacters" :key="group.key">
+        <div class="px-2.5 pt-3 pb-1 text-[12px] text-ds-muted">
+          {{ group.label }}
         </div>
-      </template>
-      <template v-else>
-        <div v-for="(item, index) of characterList" :key="index">
+        <div class="flex flex-col gap-0.5">
           <a
-            class="relative flex items-center gap-3 px-3 py-3 break-all border rounded-md cursor-pointer hover:bg-neutral-100 group dark:border-neutral-800 dark:hover:bg-[#24272e]"
-            :class="isActive(item.uuid) && ['border-[#4b9e5f]', 'bg-neutral-100', 'text-[#4b9e5f]', 'dark:bg-[#24272e]', 'dark:border-[#4b9e5f]']"
+            v-for="item in group.items"
+            :key="item.uuid"
+            class="relative flex items-center gap-2 px-2.5 py-2 rounded-ds-md cursor-pointer text-[13px] transition-colors"
+            :class="isActive(item.uuid) ? 'bg-ds-active text-ds-text' : 'text-ds-secondary hover:bg-ds-hover'"
             @click="handleSelect(item)" @mouseenter="handleMouseEnter(item)" @mouseleave="handleMouseLeave"
           >
-            <span>
-              <SvgIcon icon="ri:message-3-line" />
-            </span>
-            <div class="relative flex-1 overflow-hidden break-all text-ellipsis whitespace-nowrap">
-              <span>{{ item.title }}</span>
-            </div>
-            <div v-if="mouseEnterKbUuid === item.uuid || isMobile" class="absolute z-10 flex visible right-1 pd-2">
-              <button class="p-1">
-                <SvgIcon icon="carbon:edit" @click.stop="openEditView(item)" />
-              </button>
-            </div>
+            <span class="flex-1 overflow-hidden break-all text-ellipsis whitespace-nowrap">{{ item.title }}</span>
+            <button
+              v-if="mouseEnterKbUuid === item.uuid || isMobile"
+              class="shrink-0 p-1 text-ds-muted hover:text-ds-text"
+              @click.stop="openEditView(item)"
+            >
+              <SvgIcon icon="carbon:edit" />
+            </button>
           </a>
         </div>
       </template>
-    </div>
+    </template>
   </NScrollbar>
 </template>

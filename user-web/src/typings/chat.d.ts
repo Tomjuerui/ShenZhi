@@ -91,6 +91,7 @@ declare namespace Chat {
 		isEnableThinking: boolean //是否启用思考过程
 		isEnableWebSearch: boolean //是否启用网络搜索
 		audioConfig: AudioConfig //语音配置
+		createTime?: string // 服务端返回，用于会话列表按月分组
 	}
 
 	interface CharacterWithMessages {
@@ -104,6 +105,7 @@ declare namespace Chat {
 		characters: Character[]
 		chats: CharacterWithMessages[]
 		loadingMsgs: Set<string>
+		convListLoaded: boolean
 		presetCharacters: CharacterPreset[]
 		msgToMemoryRef: Map<string, MemoryEmbedding[]>
 		msgToEmbeddingRef: Map<string, KnowledgeBase.QaRecordEmbeddingRef[]>
