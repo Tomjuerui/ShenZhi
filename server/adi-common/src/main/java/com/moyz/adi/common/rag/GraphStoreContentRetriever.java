@@ -23,8 +23,6 @@ import static com.moyz.adi.common.enums.ErrorEnum.B_BREAK_SEARCH;
 import static dev.langchain4j.internal.Utils.getOrDefault;
 import static dev.langchain4j.internal.ValidationUtils.ensureGreaterThanZero;
 import static dev.langchain4j.internal.ValidationUtils.ensureNotNull;
-import static java.util.stream.Collectors.toList;
-import static java.util.stream.Collectors.toMap;
 import static java.util.stream.Collectors.toSet;
 
 @Slf4j
@@ -33,6 +31,7 @@ public class GraphStoreContentRetriever implements ContentRetriever {
     public static final Function<Query, Filter> DEFAULT_FILTER = query -> null;
 
     public static final String DEFAULT_DISPLAY_NAME = "Default";
+    public static final int DEFAULT_MAX_HOPS = 3;
 
     private final GraphStore graphStore;
     private final ChatModel chatModel;
@@ -43,6 +42,8 @@ public class GraphStoreContentRetriever implements ContentRetriever {
     private final String displayName;
 
     private final boolean breakIfSearchMissed;
+
+    private final int maxHops;
 
     private final Set<String> excludedItemUuids;
 
@@ -55,6 +56,7 @@ public class GraphStoreContentRetriever implements ContentRetriever {
                                        Function<Query, Integer> dynamicMaxResults,
                                        Function<Query, Filter> dynamicFilter,
                                        Boolean breakIfSearchMissed,
+                                       Integer maxHops,
                                        Set<String> excludedItemUuids) {
         this.displayName = getOrDefault(displayName, DEFAULT_DISPLAY_NAME);
         this.graphStore = ensureNotNull(graphStore, "graphStore");
@@ -62,6 +64,7 @@ public class GraphStoreContentRetriever implements ContentRetriever {
         this.maxResultsProvider = getOrDefault(dynamicMaxResults, DEFAULT_MAX_RESULTS);
         this.filterProvider = getOrDefault(dynamicFilter, DEFAULT_FILTER);
         this.breakIfSearchMissed = breakIfSearchMissed;
+        this.maxHops = (maxHops == null) ? DEFAULT_MAX_HOPS : maxHops;
         this.excludedItemUuids = excludedItemUuids;
     }
 
@@ -107,49 +110,85 @@ public class GraphStoreContentRetriever implements ContentRetriever {
             return Collections.emptyList();
         }
 
-        List<String> entityNames = entities.stream().toList();
-        List<GraphVertex> vertices = graphStore.searchVertices(
-                GraphVertexSearch.builder()
-                        .names(entityNames)
-                        .metadataFilter(filterProvider.apply(query))
-                        .limit(maxResultsProvider.apply(query))
-                        .build()
-        );
-        List<Triple<GraphVertex, GraphEdge, GraphVertex>> edgeWithVerticeList = graphStore.searchEdges(
-                GraphEdgeSearch.builder()
-                        .edge(GraphSearchCondition.builder().metadataFilter(filterProvider.apply(query)).build())
-                        .limit(maxResultsProvider.apply(query))
-                        .build()
-        );
+        Filter filter = filterProvider.apply(query);
+        int perHopLimit = Math.max(maxResultsProvider.apply(query), 10);
+        Set<String> frontier = entities;
+        Map<String, GraphVertex> visitedVertices = new LinkedHashMap<>();
+        Map<String, GraphEdge> visitedEdges = new LinkedHashMap<>();
+
+        for (int hop = 0; hop < maxHops && !frontier.isEmpty(); hop++) {
+            List<String> frontierNames = new ArrayList<>(frontier);
+            List<GraphVertex> hopVertices = graphStore.searchVertices(
+                    GraphVertexSearch.builder()
+                            .names(frontierNames)
+                            .metadataFilter(filter)
+                            .limit(perHopLimit)
+                            .build()
+            );
+            for (GraphVertex vertex : hopVertices) {
+                visitedVertices.put(vertex.getId(), vertex);
+            }
+
+            List<Triple<GraphVertex, GraphEdge, GraphVertex>> hopEdges = new ArrayList<>();
+            hopEdges.addAll(graphStore.searchEdges(
+                    GraphEdgeSearch.builder()
+                            .source(GraphSearchCondition.builder().names(frontierNames).metadataFilter(filter).build())
+                            .limit(perHopLimit)
+                            .build()
+            ));
+            hopEdges.addAll(graphStore.searchEdges(
+                    GraphEdgeSearch.builder()
+                            .target(GraphSearchCondition.builder().names(frontierNames).metadataFilter(filter).build())
+                            .limit(perHopLimit)
+                            .build()
+            ));
+
+            Set<String> next = new HashSet<>();
+            for (Triple<GraphVertex, GraphEdge, GraphVertex> triple : hopEdges) {
+                GraphEdge edge = triple.getMiddle();
+                visitedEdges.putIfAbsent(edge.getId(), edge);
+                visitedVertices.putIfAbsent(triple.getLeft().getId(), triple.getLeft());
+                visitedVertices.putIfAbsent(triple.getRight().getId(), triple.getRight());
+                if (StringUtils.isNotBlank(triple.getLeft().getName())) {
+                    next.add(triple.getLeft().getName().toUpperCase());
+                }
+                if (StringUtils.isNotBlank(triple.getRight().getName())) {
+                    next.add(triple.getRight().getName().toUpperCase());
+                }
+            }
+            next.removeAll(frontier);
+            for (GraphVertex vertex : visitedVertices.values()) {
+                if (StringUtils.isNotBlank(vertex.getName())) {
+                    next.remove(vertex.getName().toUpperCase());
+                }
+            }
+            frontier = next;
+        }
 
         // Post-filter: exclude vertices/edges whose kb_item_uuid is entirely disabled.
         // Cannot use IsNotIn in the graph query because kb_item_uuid may be a
         // comma-separated multi-value string (GraphStoreIngestor append logic).
         if (excludedItemUuids != null && !excludedItemUuids.isEmpty()) {
-            vertices = vertices.stream()
-                    .filter(v -> shouldKeep(v.getMetadata()))
-                    .collect(toList());
-            edgeWithVerticeList = edgeWithVerticeList.stream()
-                    .filter(t -> shouldKeep(t.getMiddle().getMetadata()))
-                    .collect(toList());
+            visitedVertices.values().removeIf(v -> !shouldKeep(v.getMetadata()));
+            visitedEdges.values().removeIf(e -> !shouldKeep(e.getMetadata()));
         }
 
-        Map<String, GraphVertex> allVertices = new HashMap<>();
-        List<GraphEdge> allEdges = new ArrayList<>();
-        for (Triple<GraphVertex, GraphEdge, GraphVertex> triple : edgeWithVerticeList) {
-            allVertices.put(triple.getLeft().getId(), triple.getLeft());
-            allVertices.put(triple.getRight().getId(), triple.getRight());
-            allEdges.add(triple.getMiddle());
-        }
-        allVertices.putAll(vertices.stream().collect(toMap(GraphVertex::getId, Function.identity())));
-        kbQaRecordRefGraphDto.setEntitiesFromQuestion(entityNames);
-        kbQaRecordRefGraphDto.setVertices(allVertices.values().stream().toList());
-        kbQaRecordRefGraphDto.setEdges(allEdges);
+        kbQaRecordRefGraphDto.setEntitiesFromQuestion(entities.stream().toList());
+        kbQaRecordRefGraphDto.setVertices(new ArrayList<>(visitedVertices.values()));
+        kbQaRecordRefGraphDto.setEdges(new ArrayList<>(visitedEdges.values()));
 
-        List<Content> vertexContents = vertices.stream().map(GraphVertex::getDescription).map(Content::from).collect(toList());
-        List<Content> edgeContents = edgeWithVerticeList.stream().map(Triple::getMiddle).map(GraphEdge::getDescription).map(Content::from).toList();
-        vertexContents.addAll(edgeContents);
-        return vertexContents;
+        List<Content> contents = new ArrayList<>();
+        for (GraphVertex vertex : visitedVertices.values()) {
+            if (StringUtils.isNotBlank(vertex.getDescription())) {
+                contents.add(Content.from(vertex.getDescription()));
+            }
+        }
+        for (GraphEdge edge : visitedEdges.values()) {
+            if (StringUtils.isNotBlank(edge.getDescription())) {
+                contents.add(Content.from(edge.getDescription()));
+            }
+        }
+        return contents;
     }
 
     public RefGraphDto getGraphRef() {

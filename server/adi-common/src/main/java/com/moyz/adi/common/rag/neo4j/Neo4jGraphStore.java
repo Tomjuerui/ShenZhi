@@ -200,9 +200,16 @@ public class Neo4jGraphStore implements GraphStore {
                 node = node(this.graphName).named("v");
             }
             AdiNeo4jFilterMapper neo4jFilterMapper = new AdiNeo4jFilterMapper(node);
-            Condition condition = node.property("name")
-                    .in(Cypher.literalOf(search.getNames()))
-                    .and(neo4jFilterMapper.getCondition(search.getMetadataFilter()));
+            Condition condition = null;
+            if (CollectionUtils.isNotEmpty(search.getNames())) {
+                condition = node.property("name").in(Cypher.literalOf(search.getNames()));
+            }
+            Condition metadataCondition = neo4jFilterMapper.getCondition(search.getMetadataFilter());
+            if (null != condition) {
+                condition = condition.and(metadataCondition);
+            } else {
+                condition = metadataCondition;
+            }
             Statement statement = match(node)
                     .where(condition)
                     .with(node)
@@ -381,26 +388,28 @@ public class Neo4jGraphStore implements GraphStore {
             Condition targetCondition = targetNode.property("name")
                     .in(Cypher.literalOf(edgeEditInfo.getTargetFilter().getNames()))
                     .and(targetFilerMapper.getCondition(edgeEditInfo.getTargetFilter().getMetadataFilter()));
-            List<Condition> updateConditions = new ArrayList<>();
+            List<Expression> updateColumns = new ArrayList<>();
+            updateColumns.add(edge.property("weight"));
+            updateColumns.add(Cypher.literalOf(newData.getWeight()));
+            updateColumns.add(edge.property("text_segment_id"));
+            updateColumns.add(Cypher.literalOf(newData.getTextSegmentId()));
+            updateColumns.add(edge.property("description"));
+            updateColumns.add(Cypher.literalOf(newData.getDescription()));
             if (null != newData.getMetadata()) {
                 for (Map.Entry<String, Object> entry : newData.getMetadata().entrySet()) {
-                    updateConditions.add(edge.property(entry.getKey()).eq(Cypher.literalOf(entry.getValue())));
+                    updateColumns.add(edge.property(entry.getKey()));
+                    updateColumns.add(Cypher.literalOf(entry.getValue()));
                 }
             }
             Statement statement = match(sourceNode, targetNode, edge)
                     .with(sourceNode, targetNode, edge)
                     .where(sourceCondition.and(targetCondition))
-                    .set(edge.property("weight"), edge.property("text_segment_id"), edge.property("description"))
-                    .set(updateConditions)
+                    .set(updateColumns)
                     .returning(sourceNode, targetNode, edge)
                     .build();
             String cypherQuery = Renderer.getDefaultRenderer().render(statement);
             log.info("updateEdge prepareSql:{}", cypherQuery);
-            Map<String, Object> params = new HashMap<>();
-            params.put("weight", newData.getWeight());
-            params.put("text_segment_id", newData.getTextSegmentId());
-            params.put("description", newData.getDescription());
-            List<Record> records = session.executeWrite(tx -> tx.run(cypherQuery, params).list());
+            List<Record> records = session.executeWrite(tx -> tx.run(cypherQuery).list());
             return getEdgeFromResultSet(records);
         }
     }
