@@ -49,6 +49,9 @@ adi:
   vector-database: pgvector
   # graph-database: apache-age, neo4j
   graph-database: apache-age
+  mail:
+    # false 时注册跳过邮箱激活（本地无 SMTP 场景）
+    enable: ${ADI_MAIL_ENABLE:true}
   datasource:
     neo4j:
       host: ${ADI_NEO4J_HOST:localhost}

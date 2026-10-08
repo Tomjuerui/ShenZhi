@@ -117,14 +117,25 @@ public class UserService extends ServiceImpl<UserMapper, User> {
         if (null != user && user.getUserStatus() == UserStatusEnum.NORMAL) {
             throw new BaseException(A_USER_EXIST);
         }
+        boolean mailEnable = adiProperties.getMail().isEnable();
         if (null != user) {
-            sendActiveEmail(email);
+            if (mailEnable) {
+                sendActiveEmail(email);
+            } else {
+                log.warn("mail disabled, activate user directly: {}", email);
+                User reactivate = new User();
+                reactivate.setId(user.getId());
+                reactivate.setUserStatus(UserStatusEnum.NORMAL);
+                baseMapper.updateById(reactivate);
+            }
             return;
         }
 
 //Send activation link
         //发送激活链接
-        sendActiveEmail(email);
+        if (mailEnable) {
+            sendActiveEmail(email);
+        }
 
         String hashed = BCrypt.hashpw(password, BCrypt.gensalt());
 
@@ -135,7 +146,7 @@ public class UserService extends ServiceImpl<UserMapper, User> {
         newOne.setUuid(UuidUtil.createShort());
         newOne.setEmail(email);
         newOne.setPassword(hashed);
-        newOne.setUserStatus(UserStatusEnum.WAIT_CONFIRM);
+        newOne.setUserStatus(mailEnable ? UserStatusEnum.WAIT_CONFIRM : UserStatusEnum.NORMAL);
         baseMapper.insert(newOne);
 
         //Create default character

@@ -33,6 +33,11 @@ public class AdiProperties {
      */
     private Memory memory = new Memory();
 
+    /**
+     * 邮件相关配置 | Mail settings.
+     */
+    private Mail mail = new Mail();
+
     @Data
     public static class Proxy {
         private boolean enable;
@@ -57,6 +62,16 @@ public class AdiProperties {
     @Data
     public static class Encrypt {
         private String aesKey;
+    }
+
+    @Data
+    public static class Mail {
+        /**
+         * 是否启用邮件（注册激活、找回密码）。本地无 SMTP 时可设为 false 跳过邮箱验证。
+         * <p>
+         * Whether mail is enabled; set false to skip email verification on registration.
+         */
+        private boolean enable = true;
     }
 
     /**
