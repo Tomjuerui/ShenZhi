@@ -1,14 +1,55 @@
-version: '3.8'
-
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: aideepin-postgres
+    environment:
+      POSTGRES_DB: ${ADI_DB_NAME}
+      POSTGRES_USER: ${ADI_DB_USERNAME}
+      POSTGRES_PASSWORD: ${ADI_DB_PASSWORD}
+      TZ: ${TZ}
+    ports:
+      - '${ADI_DB_HOST_PORT:-5432}:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres/init/000_ext.sql:/docker-entrypoint-initdb.d/000_ext.sql:ro
+      - ../server/db_migration/all_ddl.sql:/docker-entrypoint-initdb.d/010_all_ddl.sql:ro
+      - ../server/db_migration/all_dml.sql:/docker-entrypoint-initdb.d/015_all_dml.sql:ro
+      - ../server/db_migration/all_dml_cn.sql:/docker-entrypoint-initdb.d/020_all_dml_cn.sql:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${ADI_DB_USERNAME} -d ${ADI_DB_NAME}']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  neo4j:
+    image: neo4j:5-community
+    container_name: aideepin-neo4j
+    environment:
+      NEO4J_AUTH: neo4j/${ADI_NEO4J_PASSWORD}
+      NEO4J_PLUGINS: '["apoc"]'
+      TZ: ${TZ}
+    ports:
+      - '7474:7474'   # 内置 Browser：http://localhost:7474
+      - '7687:7687'   # Bolt
+    volumes:
+      - neo4j-data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -qO- http://localhost:7474 || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 20
+
   redis:
     image: redis:6.2.5
-    container_name: redis
-    ports:
-      - 6379:6379
+    container_name: aideepin-redis
     volumes:
-      - /data/redis/data:/data
+      - redis-data:/data
     command: redis-server --appendonly yes
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 5s
+      timeout: 3s
+      retries: 20
 
   aideepin-api:
     image: adi-bootstrap:${IMAGE_VERSION}
@@ -32,39 +73,40 @@ services:
       ADI_MAIL_HOST: ${ADI_MAIL_HOST}
       ADI_MAIL_USERNAME: ${ADI_MAIL_USERNAME}
       ADI_MAIL_PASSWORD: ${ADI_MAIL_PASSWORD}
+      ADI_MAIL_ENABLE: ${ADI_MAIL_ENABLE}
       ADI_ENCRYPT_AES_KEY: ${ADI_ENCRYPT_AES_KEY}
-      # Neo4j (optional, uncomment if needed)
-      # ADI_NEO4J_HOST: ${ADI_NEO4J_HOST}
-      # ADI_NEO4J_PORT: ${ADI_NEO4J_PORT}
-      # ADI_NEO4J_USERNAME: ${ADI_NEO4J_USERNAME}
-      # ADI_NEO4J_PASSWORD: ${ADI_NEO4J_PASSWORD}
-      # ADI_NEO4J_DATABASE: ${ADI_NEO4J_DATABASE}
+      ADI_GRAPH_DATABASE: ${ADI_GRAPH_DATABASE}
+      ADI_NEO4J_HOST: ${ADI_NEO4J_HOST}
+      ADI_NEO4J_PORT: ${ADI_NEO4J_PORT}
+      ADI_NEO4J_USERNAME: ${ADI_NEO4J_USERNAME}
+      ADI_NEO4J_PASSWORD: ${ADI_NEO4J_PASSWORD}
+      ADI_NEO4J_DATABASE: ${ADI_NEO4J_DATABASE}
+      ADI_HOST: ${ADI_HOST}
+      ADI_FRONTEND_URL: ${ADI_FRONTEND_URL}
+      ADI_BACKEND_URL: ${ADI_BACKEND_URL}
+      ADI_LOCAL_BASE_DATA_PATH: ${ADI_LOCAL_BASE_DATA_PATH}
     volumes:
-      - /data/aideepin:/data/aideepin
-      - /data/aideepin-logs:/data/aideepin-logs
+      - aideepin-data:/data/aideepin
+      - aideepin-logs:/data/aideepin-logs
     depends_on:
-      - redis
-
-  aideepin-user-web:
-    container_name: aideepin-user-web
-    build:
-      context: ../user-web
-      dockerfile: Dockerfile
+      postgres:
+        condition: service_healthy
+      neo4j:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
   aideepin-admin-web:
     container_name: aideepin-admin-web
+    # 仓库缺少 admin-web/build/ 目录，暂时禁用；补齐后 docker compose --profile admin up -d 启用
+    profiles: ["admin"]
     build:
       context: ../admin-web
       dockerfile: Dockerfile
 
-  nginx:
-    container_name: nginx
-    image: nginx:alpine
-    ports:
-      - '80:80'
-    volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
-    depends_on:
-      - aideepin-api
-      - aideepin-user-web
-      - aideepin-admin-web
+volumes:
+  postgres-data:
+  neo4j-data:
+  redis-data:
+  aideepin-data:
+  aideepin-logs:

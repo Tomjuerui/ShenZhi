@@ -35,6 +35,8 @@ export default defineConfig((env) => {
       host: '0.0.0.0',
       port: 1002,
       open: false,
+      // Docker Desktop on Windows 的 bind mount 上文件事件不可靠，用轮询保证 HMR
+      watch: viteEnv.VITE_USE_POLLING === 'true' ? { usePolling: true, interval: 300 } : undefined,
       proxy: {
         '/api': {
           target: viteEnv.VITE_APP_API_BASE_URL,

@@ -1,0 +1,56 @@
+# 前端开发模式 override
+#
+# 【推荐用法 · 不变】宿主机跑 Vite，只让 infra/后端进容器（最快，本机已验证）
+#   cd docker
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres neo4j redis aideepin-api
+#   cd ../user-web && pnpm dev          # 浏览器 http://localhost:1002
+#   改 .vue/.ts 存盘即 HMR，不需要任何容器重建
+#
+# 【备选用法 · 全容器化】让容器跑 Vite（源码 bind mount）
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d user-web-dev
+#   浏览器 http://localhost:1002
+#   ⚠ 本机实测：容器内 pnpm install 会在 ~973/979 处卡死在 epoll_wait（Docker Desktop
+#     on Windows 的 bind mount/卷交互问题，且本机 Docker 引擎当时还伴随 500 报错）。
+#     容器内依赖装好后（命名卷持久化）可用；装不出来就退回上面的宿主机方案。
+services:
+  # 宿主机跑 pnpm dev 时 vite.config.ts 的 proxy 指向 http://127.0.0.1:9999，
+  # 而 compose 里 aideepin-api 默认不映射宿主端口，故在 dev 里补上
+  aideepin-api:
+    ports:
+      - '9999:9999'
+
+  # 全容器化方案：node 容器跑 Vite + 源码挂载
+  # - node_modules 挂在命名卷上，**不要**让容器用宿主机那份
+  #   （Windows bind mount 是 9P/gRPC-FUSE，pnpm 在 node_modules 里做符号链接/硬链接会失败）
+  # - npm_config_store_dir 也必须指到命名卷：否则 pnpm 会把 store 写进 /app（= bind mount = 宿主机
+  #   user-web/.pnpm-store），既污染仓库又慢。实测踩过这个坑（残留 79096 个文件）
+  # - --frozen-lockfile 是为了**绝不反写宿主机 user-web/pnpm-lock.yaml**
+  # - VITE_APP_API_BASE_URL 覆盖 user-web/.env 里的 127.0.0.1:9999（在容器里指向 node 自己），
+  #   改为容器 DNS 直达 api；Vite 的 loadEnv 给 process.env 里已有的 VITE_* 最高优先级
+  user-web-dev:
+    image: node:22-alpine
+    container_name: aideepin-user-web-dev
+    working_dir: /app
+    command: >
+      sh -c "npm install -g pnpm@10
+      && pnpm install --frozen-lockfile --reporter=append-only
+      && pnpm dev --host 0.0.0.0 --port 1002"
+    environment:
+      VITE_APP_API_BASE_URL: http://aideepin-api:9999/
+      # pnpm store 落命名卷，避免写穿 bind mount
+      npm_config_store_dir: /pnpm-store
+      # 让 Vite 用轮询监听文件（Windows bind mount 的 inotify 不可靠）
+      VITE_USE_POLLING: 'true'
+      # 给 chokidar 也开轮询，双保险
+      CHOKIDAR_USEPOLLING: 'true'
+    ports:
+      - '1002:1002'
+    volumes:
+      - ../user-web:/app
+      - user-web-dev-node-modules:/app/node_modules
+      - user-web-dev-pnpm-store:/pnpm-store
+    restart: unless-stopped
+
+volumes:
+  user-web-dev-node-modules:
+  user-web-dev-pnpm-store:
