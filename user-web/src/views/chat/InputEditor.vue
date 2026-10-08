@@ -1,10 +1,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { NAutoComplete, NButton, NCard, NInput, NModal, useMessage } from 'naive-ui'
+import { NAutoComplete, NCard, NInput, NModal, useMessage } from 'naive-ui'
 import { storeToRefs } from 'pinia'
 import { v4 as uuidv4 } from 'uuid'
 import { useChat } from './hooks/useChat'
-import { SvgIcon } from '@/components/common'
 import AudioRecorder from '@/components/AudioRecorder.vue'
 import { useAppStore, useAuthStore, useChatStore, usePromptStore } from '@/store'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
@@ -370,12 +369,15 @@ const placeholder = computed(() => {
 
 defineExpose({
   handleStop,
+  handleSubmit,
+  handleShowAudioRecorderModal,
+  buttonDisabled,
 })
 </script>
 
 <template>
-  <div class="flex items-center space-x-2">
-    <NAutoComplete v-model:value="prompt" class="grow" :options="searchOptions" :get-show="getShow">
+  <div class="ds-chat-input px-4 pt-3">
+    <NAutoComplete v-model:value="prompt" class="w-full" :options="searchOptions" :get-show="getShow">
       <template #default="{ handleInput, handleBlur, handleFocus }">
         <NInput
           ref="inputRef" v-model:value="prompt" type="textarea" :placeholder="placeholder"
@@ -384,27 +386,33 @@ defineExpose({
         />
       </template>
     </NAutoComplete>
-    <NButton class="flex-none" type="primary" :disabled="buttonDisabled" @click="handleSubmit">
-      <template #icon>
-        <span class="dark:text-black">
-          <SvgIcon icon="ri:send-plane-fill" />
-        </span>
-      </template>
-    </NButton>
-    <NButton class="flex-none" type="primary" @click="handleShowAudioRecorderModal">
-      <template #icon>
-        <span class="dark:text-black">
-          <SvgIcon icon="icon-park-outline:voice" />
-        </span>
-      </template>
-    </NButton>
-    <NModal :show="showAudioRecorderModal">
-      <NCard style="max-width: 600px" :title="t('chat.voiceChat')" size="huge" :bordered="false" role="dialog" aria-modal="true">
-        <AudioRecorder
-          @recorded="handleAudioRecorded" @submitted="handleAudioSubmitted"
-          @exit="showAudioRecorderModal = false"
-        />
-      </NCard>
-    </NModal>
   </div>
+  <NModal :show="showAudioRecorderModal">
+    <NCard style="max-width: 600px" :title="t('chat.voiceChat')" size="huge" :bordered="false" role="dialog" aria-modal="true">
+      <AudioRecorder
+        @recorded="handleAudioRecorded" @submitted="handleAudioSubmitted"
+        @exit="showAudioRecorderModal = false"
+      />
+    </NCard>
+  </NModal>
 </template>
+
+<style scoped>
+.ds-chat-input :deep(.n-input) {
+  --n-border: none;
+  --n-border-hover: none;
+  --n-border-focus: none;
+  --n-box-shadow-focus: none;
+  font-size: 15px;
+  background-color: transparent;
+}
+
+.ds-chat-input :deep(.n-input .n-input__border),
+.ds-chat-input :deep(.n-input .n-input__state-border) {
+  display: none;
+}
+
+.ds-chat-input :deep(.n-input .n-input__textarea-el) {
+  padding: 0;
+}
+</style>

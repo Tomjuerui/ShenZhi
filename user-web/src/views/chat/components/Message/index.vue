@@ -1,6 +1,6 @@
 <script setup lang='ts'>
 import { computed, h, ref, watch } from 'vue'
-import { NButton, NCollapse, NCollapseItem, NDropdown, NEmpty, NIcon, NImage, NSpace, NSpin, useDialog } from 'naive-ui'
+import { NButton, NDropdown, NEmpty, NIcon, NImage, NSpace, NSpin, useDialog } from 'naive-ui'
 import type { ImageRenderToolbarProps } from 'naive-ui'
 import { Delete24Regular } from '@vicons/fluent'
 import { Reload } from '@vicons/ionicons5'
@@ -61,7 +61,7 @@ const asRawText = ref(props.inversion)
 
 const messageRef = ref<HTMLElement>()
 
-const expandedNames = ref<string[]>(['finalAnswer'])
+const showThinking = ref(false)
 
 const options = computed(() => {
   const common = [
@@ -88,13 +88,8 @@ const options = computed(() => {
   return common
 })
 
-function itemHeadClick(data: { name: string | number; expanded: boolean; event: MouseEvent }) {
-  const idx = expandedNames.value.findIndex(name => name === data.name.toString())
-  if (idx === -1 && data.expanded)
-    expandedNames.value.push(data.name.toString())
-
-  if (idx !== -1 && !data.expanded)
-    expandedNames.value.splice(idx, 1)
+function toggleThinking() {
+  showThinking.value = !showThinking.value
 }
 
 function handleSelect(key: 'copyText' | 'delete' | 'toggleRenderType') {
@@ -149,63 +144,52 @@ function renderToolbarOut2(imageUrl: string) {
 }
 
 watch(() => props.thinking, (thinking) => {
-  if (thinking)
-    expandedNames.value = ['thinking']
-  else
-    expandedNames.value = ['thinking', 'finalAnswer']
-})
+  // 推理中展开、结论产出后自动收起（对齐 DeepSeek）
+  showThinking.value = !!thinking
+}, { immediate: true })
 </script>
 
 <template>
-  <div ref="messageRef" class="flex w-full mb-6 overflow-hidden" :class="[{ 'flex-row-reverse': inversion }]">
+  <div ref="messageRef" class="group flex w-full mb-5" :class="[inversion ? 'justify-end' : '']">
     <div
-      v-if="showAvatar"
-      class="flex items-center justify-center flex-shrink-0 h-8 overflow-hidden rounded-full basis-8"
-      :class="[inversion ? 'ml-2' : 'mr-2']"
+      v-if="showAvatar && !inversion"
+      class="flex items-center justify-center flex-shrink-0 w-8 h-8 mt-0.5 mr-3 overflow-hidden rounded-full"
     >
-      <AvatarComponent :name="inversion ? 'user' : aiModelPlatform" />
+      <AvatarComponent :name="aiModelPlatform" />
     </div>
-    <div class="overflow-hidden text-sm " :class="[inversion ? 'items-end' : 'items-start']">
-      <p class="text-xs text-[#b4bbc4]" :class="[inversion ? 'text-right' : 'text-left']">
-        {{ dateTime }}
-        <span v-if="inputTokens != null" class="ml-1">📥 {{ inputTokens }}</span>
-        <span v-if="outputTokens != null" class="ml-1">📤 {{ outputTokens }}</span>
-        <span v-if="duration != null" class="ml-1">⏱ {{ formatDuration(duration) }}</span>
-        <template v-if="toolCalls?.length">
-          <span class="ml-1">🔧 {{ toolCalls.length }}</span>
-          <span v-for="(tool, idx) in toolCalls" :key="idx" class="ml-1 text-[10px] opacity-70">
-            {{ tool.toolName }}({{ formatDuration(tool.durationMs) }}{{ tool.success ? '' : '✗' }})
-          </span>
-        </template>
-      </p>
-      <div class="flex items-start gap-1 mt-2" :class="[inversion ? 'flex-row-reverse' : 'flex-row']">
+    <div class="flex flex-col min-w-0 text-sm" :class="[inversion ? 'items-end max-w-[85%]' : 'flex-1 items-start']">
+      <div class="flex items-start gap-1 w-full" :class="[inversion ? 'flex-row-reverse' : 'flex-row']">
         <!-- 消息框侧边下拉选择列表 -->
         <template v-if="type === 'text' || type === 'text-image'">
-          <NCollapse
-            v-if="thinkingContent" :default-expanded-names="['finalAnswer']" :expanded-names="expandedNames"
-            @item-header-click="itemHeadClick"
-          >
-            <NCollapseItem :title="t('chat.deepThinking')" name="thinking">
+          <div v-if="thinkingContent" class="w-full">
+            <button
+              type="button"
+              class="flex items-center gap-1 mb-2 text-[13px] text-ds-muted transition-colors hover:text-ds-text"
+              @click="toggleThinking"
+            >
+              <SvgIcon :icon="showThinking ? 'ri:arrow-down-s-line' : 'ri:arrow-right-s-line'" />
+              {{ t('chat.deepThinking') }}
+              <span v-if="!thinking && duration != null" class="opacity-80">· {{ formatDuration(duration) }}</span>
+            </button>
+            <div v-show="showThinking" class="pl-3 mb-3 border-l-2 border-ds-border">
               <TextComponent
-                ref="textRef" :inversion="inversion" :error="error" :text="thinkingContent"
+                ref="textRef" :inversion="false" :error="error" :text="thinkingContent"
                 :loading="thinking" :as-raw-text="asRawText"
               />
-            </NCollapseItem>
-            <NCollapseItem :title="t('chat.finalAnswer')" name="finalAnswer">
-              <TextComponent
-                ref="textRef" :inversion="inversion" :error="error" :text="text" :loading="loading"
-                :as-raw-text="asRawText"
-              />
-            </NCollapseItem>
-          </NCollapse>
+            </div>
+            <TextComponent
+              ref="textRef" :inversion="inversion" :error="error" :text="text" :loading="loading"
+              :as-raw-text="asRawText"
+            />
+          </div>
           <TextComponent
             v-else ref="textRef" :inversion="inversion" :error="error" :text="text" :loading="loading"
             :as-raw-text="asRawText"
           />
-          <div class="flex flex-col">
+          <div class="flex flex-col shrink-0 transition-opacity opacity-0 group-hover:opacity-100">
             <button
               v-if="regenerate"
-              class="mb-2 transition text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-300"
+              class="mb-2 text-ds-muted transition-colors hover:text-ds-text"
               @click="handleRegenerate"
             >
               <SvgIcon icon="ri:restart-line" />
@@ -214,13 +198,26 @@ watch(() => props.thinking, (thinking) => {
               :trigger="isMobile ? 'click' : 'hover'" :placement="!inversion ? 'right' : 'left'"
               :options="options" @select="handleSelect"
             >
-              <button class="transition text-neutral-400 hover:text-neutral-800 dark:hover:text-neutral-200">
+              <button class="text-ds-muted transition-colors hover:text-ds-text">
                 <SvgIcon icon="ri:more-2-fill" />
               </button>
             </NDropdown>
           </div>
         </template>
       </div>
+      <!-- 元信息：时间 / token / 工具调用（无 emoji） -->
+      <p class="mt-1.5 text-[11px] text-ds-muted" :class="[inversion ? 'text-right' : 'text-left']">
+        {{ dateTime }}
+        <span v-if="inputTokens != null" class="ml-1">· {{ t('chat.inputTokens') }} {{ inputTokens }}</span>
+        <span v-if="outputTokens != null" class="ml-1">· {{ t('chat.outputTokens') }} {{ outputTokens }}</span>
+        <span v-if="duration != null" class="ml-1">· {{ formatDuration(duration) }}</span>
+        <span v-if="toolCalls?.length" class="ml-1">
+          · {{ t('chat.toolLabel') }} {{ toolCalls.length }}
+          <span v-for="(tool, idx) in toolCalls" :key="idx" class="ml-1 opacity-70">
+            {{ tool.toolName }}({{ formatDuration(tool.durationMs) }}{{ tool.success ? '' : ' ✗' }})
+          </span>
+        </span>
+      </p>
       <NSpace class="mt-1" :style="inversion ? 'justify-content:flex-end;' : ''">
         <!-- render image -->
         <template v-if="type === 'image' || type === 'text-image'">

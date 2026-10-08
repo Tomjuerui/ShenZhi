@@ -41,7 +41,7 @@ const authStore = useAuthStore()
       </div>
       <div v-if="node.duration || node.metadata" class="flex flex-wrap gap-1.5 px-2 py-1 text-xs text-gray-500">
         <span v-if="formatDuration(node.duration)" class="metric-chip">
-          ⏱ {{ formatDuration(node.duration) }}
+          · {{ formatDuration(node.duration) }}
         </span>
         <!-- LLM / Agent: token + model -->
         <template v-if="node.metadata?.type === 'llm' || node.metadata?.type === 'agent'">

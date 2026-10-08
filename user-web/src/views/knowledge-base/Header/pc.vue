@@ -45,12 +45,10 @@ function showOrCloseModal(show: boolean) {
 </script>
 
 <template>
-  <header
-    class="left-0 top-0 z-30 border-b dark:border-neutral-800 bg-white/80 dark:bg-black/20 backdrop-blur"
-  >
-    <div class="relative flex items-center justify-between max-w-screen-xl px-4 m-auto h-10">
-      <div class="flex items-center flex-col mx-2">
-        <p class="text-sm">
+  <header class="left-0 top-0 z-30">
+    <div class="relative flex items-center justify-between max-w-ds px-4 m-auto h-10">
+      <div class="flex items-center flex-col mx-2 min-w-0">
+        <p class="text-sm text-ds-text truncate">
           {{ knowledgeBase?.title ?? '' }}
         </p>
       </div>

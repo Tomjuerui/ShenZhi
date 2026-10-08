@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { NAvatar, NButton, NDivider, NFlex, NFormItem, NInput, NModal, NPopconfirm, NSwitch, NTag, NTooltip, useMessage } from 'naive-ui'
 import { SvgIcon } from '@/components/common'
-import defaultAvatar from '@/assets/avatar.jpg'
+import defaultAvatar from '@/assets/avatar-default.svg'
 import { useAuthStore, useUserStore, useWfStore } from '@/store'
 import api from '@/api'
 import { t } from '@/locales'

@@ -1,8 +1,7 @@
 <script setup lang='ts'>
 import type { Ref } from 'vue'
 import { computed, nextTick, onActivated, ref, watch } from 'vue'
-import { NButton, NIcon, NModal, useDialog, useLoadingBar, useMessage } from 'naive-ui'
-import { Cat } from '@vicons/fa'
+import { NButton, NModal, useDialog, useLoadingBar, useMessage } from 'naive-ui'
 import { useScroll } from '../chat/hooks/useScroll'
 import Message from './components/Message/index.vue'
 import RuntimeNodes from './components/RuntimeNodes.vue'
@@ -12,6 +11,7 @@ import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { useAuthStore, useWfStore } from '@/store'
 import api from '@/api'
 import { t } from '@/locales'
+import whaleUrl from '@/assets/whale.svg'
 import { debounce } from '@/utils/functions/debounce'
 import { emptyWorkflowInfo } from '@/utils/functions'
 
@@ -188,11 +188,11 @@ onActivated(async () => {
 <template>
   <main v-show="show" class="flex-1 overflow-hidden">
     <div ref="scrollRef" class="h-full overflow-hidden overflow-y-auto" @scroll="handleScroll">
-      <div class="w-full max-w-screen-xl m-auto dark:bg-[#101014]" :class="[isMobile ? 'p-2' : 'p-4']">
+      <div class="w-full max-w-[1100px] mx-auto px-4 py-4">
         <LoginTip v-if="!authStore.token" />
         <template v-else-if="!wfRuntimes.length">
           <div class="flex items-center justify-center mt-4 text-center text-neutral-400">
-            <NIcon :component="Cat" size="32" />
+            <img :src="whaleUrl" alt="深智" class="w-8 h-8" >
             <span class="pl-1">Roar~</span>
           </div>
         </template>

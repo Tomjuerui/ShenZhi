@@ -1,6 +1,50 @@
-# AIDeepIn
+# 深智
 
-AI 应用平台，集成 AI 对话、知识库（RAG）、工作流编排、长短期记忆与 MCP 工具能力，可用于快速搭建智能业务助手。
+AI 应用平台，集成 AI 对话、知识库（RAG / GraphRAG）、工作流编排、长短期记忆与 MCP 工具能力，可用于快速搭建智能业务助手。
+
+支持多模型接入、可视化流程编排与知识图谱增强检索，开箱即用的对话式 AI 中台。
+
+## 功能预览
+
+### AI 对话
+
+多角色、多会话并行管理，可绑定知识库与 MCP 工具。支持流式输出、思考模式、联网搜索与上下文模式切换；单条回复展示输入/输出 token 消耗与耗时，并可直接跳转查看命中的记忆与引用来源。
+
+![AI 对话](docx/screenshots/01-chat-rag-answer.png)
+
+生成过程中实时展示检索与推理状态：
+
+![流式输出](docx/screenshots/02-chat-streaming.png)
+
+### 知识库
+
+按知识库组织文档，支持表单录入或文件上传，文档自动切片、向量化并构建图谱索引，列表实时展示向量化/图谱状态、字符数与命中次数。
+
+![知识库列表](docx/screenshots/03-knowledge-base-list.png)
+
+![知识库文档](docx/screenshots/04-knowledge-base-documents.png)
+
+文档切片后逐片生成向量（可选配嵌入模型），并提供可视化嵌入列表便于核对检索效果：
+
+![文档切片与向量](docx/screenshots/05-embedding-segments.png)
+
+### GraphRAG 知识图谱
+
+文档在向量化之外额外抽取实体与关系，构建知识图谱。检索时可命中图谱，前端以图结构展示实体（人物 / 机构 / 地理 / 事件）及其关联，并支持点击查看实体详情与重新布局。
+
+![知识图谱](docx/screenshots/06-graph-rag.png)
+
+### AI 工作流编排
+
+可视化画布编排，节点覆盖开始/结束、内容生成、知识检索、条件分支、内容归类、Agent、文档提取、关键词提取、常见问题提取、模板转换、人机交互、邮件发送、HTTP 请求与绘图等；支持条件分支与多路并行分支。
+
+![工作流编排](docx/screenshots/07-workflow-canvas.png)
+
+### MCP 工具
+
+接入 MCP 服务扩展模型可用的工具与数据源，支持 Streamable HTTP 与 STDIO 两种传输方式，可对每个工具单独启用并配置自定义参数。
+
+![MCP 工具](docx/screenshots/08-mcp-tools.png)
 
 ## 技术栈
 
@@ -66,7 +110,7 @@ mvn spring-boot:run -pl adi-bootstrap
 ### 4. 启动前端
 
 ```bash
-cd user-web      # 或 admin-web
+cd user-web     
 pnpm install
 pnpm run dev
 ```
@@ -81,6 +125,18 @@ cp .env.prod .env
 docker compose up -d
 ```
 
+本机开发时前后端分离更快，只把基础设施与后端放进容器：
+
+```bash
+cd docker
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d postgres neo4j redis aideepin-api
+cd ../user-web && pnpm dev     # 浏览器打开 http://localhost:1002
+```
+
+> 注意：`aideepin-api` 只有叠加 `docker-compose.dev.yml` 才会把 `9999` 端口映射到宿主机，宿主机的 Vite 才能将 `/api` 代理过去。
+
 ## 说明
 
 `server/local-repo/` 存放了 Maven Central 上缺失的两个依赖（`Happy-Captcha` 验证码、`age-jdbc` 图数据库驱动），后端通过 `file://` 本地仓库引入，构建时请勿删除该目录。
+
+界面截图为本地部署的实际运行效果，图片存放在 `docx/screenshots/`。

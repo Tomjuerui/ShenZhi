@@ -8,7 +8,7 @@ import api from '@/api'
 import { t } from '@/locales'
 import { useAppStore, useAuthStore, useUserStore } from '@/store'
 
-import Icon403 from '@/icons/403.vue'
+import logoUrl from '@/icons/logo.svg'
 
 interface LoginResp {
   token: string
@@ -16,6 +16,7 @@ interface LoginResp {
   email: string
   uuid: string
   locale: string
+  avatarFileUuid?: string
   captchaId?: string
 }
 
@@ -133,13 +134,13 @@ onMounted(async () => {
 
 <template>
   <NModal v-model:show="authStore.showLoginModal" style="width: 90%; max-width: 640px">
-    <div class="p-10 bg-white rounded dark:bg-slate-800">
+    <div class="p-8 rounded-ds-lg bg-ds-bg-elevated">
       <div class="space-y-4">
-        <header class="space-y-2">
-          <!-- <p class="text-base text-center text-slate-500 dark:text-slate-500">
-            {{ t('common.unauthorizedTips') }}
-          </p> -->
-          <Icon403 class="w-[200px] m-auto" />
+        <header class="flex flex-col items-center space-y-2">
+          <img :src="logoUrl" alt="深智" class="w-12 h-12" >
+          <h1 class="text-lg font-semibold text-ds-text">
+            深智
+          </h1>
         </header>
 
         <NTabs v-model:value="activeTab" default-value="login" type="line">

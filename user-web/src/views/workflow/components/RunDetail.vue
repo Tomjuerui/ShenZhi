@@ -292,7 +292,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="w-full max-w-screen-xl m-auto z-10">
+  <div class="w-full max-w-[1100px] m-auto z-10">
     <NTabs type="line" justify-content="space-evenly" animated default-value="runtimes">
       <NTab name="runtimes" @click="handleClick">
         {{ tabObj.tab }}

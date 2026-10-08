@@ -106,12 +106,10 @@ function extApiKey() {
 </script>
 
 <template>
-  <header
-    class="sticky top-0 left-0 z-30 border-b dark:border-neutral-800 bg-white/80 dark:bg-black/20 backdrop-blur"
-  >
-    <div class="relative flex items-center justify-between max-w-screen-xl px-4 m-auto h-10">
-      <div class="flex items-center">
-        <p class="text-sm">
+  <header class="sticky top-0 left-0 z-30">
+    <div class="relative flex items-center justify-between max-w-[1100px] px-4 m-auto h-10">
+      <div class="flex items-center min-w-0">
+        <p class="text-sm text-ds-text truncate">
           {{ workflow?.title ?? '' }}
         </p>
       </div>

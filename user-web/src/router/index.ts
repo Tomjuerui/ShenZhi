@@ -30,16 +30,6 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/user/Active.vue'),
   },
   {
-    path: '/draw',
-    name: 'Draw',
-    component: () => import('@/views/draw/index.vue'),
-  },
-  {
-    path: '/gallery',
-    name: 'Gallery',
-    component: () => import('@/views/gallery/index.vue'),
-  },
-  {
     path: '/qa',
     component: KnowledgeBaseLayout,
     name: 'QAIndex',

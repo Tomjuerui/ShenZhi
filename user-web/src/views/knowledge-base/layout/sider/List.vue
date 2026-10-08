@@ -1,5 +1,5 @@
 <script setup lang='ts'>
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { NTabPane, NTabs } from 'naive-ui'
@@ -18,29 +18,41 @@ const authStore = useAuthStore()
 const authStoreRef = ref<AuthState>(authStore)
 const { kbUuid: currKbUuid } = route.params as { kbUuid: string }
 
-// F5 reload
-if (currKbUuid !== 'default' && kbStore.activeKbUuid === 'default')
-  kbStore.setActive(currKbUuid)
+/** 路由参数或 activeKbUuid 指向不存在的知识库（含 'default'）时，落到列表里第一个真实知识库并改路由 */
+function repairActiveKb() {
+  const known = (uuid: string) =>
+    kbStore.myKbInfos.some(item => item.uuid === uuid) || kbStore.publicKbInfos.some(item => item.uuid === uuid)
+
+  if (currKbUuid && currKbUuid !== 'default' && known(currKbUuid)) {
+    kbStore.setActive(currKbUuid)
+    return
+  }
+
+  const fallback = kbStore.getSelectedKb || kbStore.myKbInfos[0] || kbStore.publicKbInfos[0]
+  if (!fallback) {
+    // 一个知识库都没有：保持原样，页面会显示「去知识库管理创建」引导
+    kbStore.setActive(currKbUuid || 'default')
+    return
+  }
+  kbStore.setActive(fallback.uuid)
+  if (currKbUuid !== fallback.uuid)
+    router.replace({ name: 'QADetail', params: { kbUuid: fallback.uuid } })
+}
 
 async function initList() {
-  if (kbStore.loaddingKbList || kbStore.myKbInfos.length > 0)
+  if (kbStore.loaddingKbList)
     return
-
-  kbStore.setLoadingKbList(true)
-  try {
-    const { data } = await api.knowledgeBaseSearchMine<KnowledgeBase.InfoListResp>('', currentPage.value, pageSize)
-    if (data.records) {
-      kbStore.setMyKbInfos(data.records)
-      nextTick(() => {
-        if (activeKbUuid.value === 'default') {
-          kbStore.setActive(myKbInfos.value[0].uuid)
-          router.replace({ name: 'QADetail', params: { kbUuid: activeKbUuid.value } })
-        }
-      })
+  if (kbStore.myKbInfos.length === 0) {
+    kbStore.setLoadingKbList(true)
+    try {
+      const { data } = await api.knowledgeBaseSearchMine<KnowledgeBase.InfoListResp>('', currentPage.value, pageSize)
+      if (data.records)
+        kbStore.setMyKbInfos(data.records)
+    } finally {
+      kbStore.setLoadingKbList(false)
     }
-  } finally {
-    kbStore.setLoadingKbList(false)
   }
+  repairActiveKb()
 }
 
 async function initStarredList() {
@@ -52,6 +64,7 @@ async function initPublicList() {
   const { data: publicData } = await api.knowledgeBaseSearchPublic<KnowledgeBase.InfoListResp>('', currentPage.value, pageSize)
   if (publicData.records)
     kbStore.setPublicKbInfos(publicData.records)
+  repairActiveKb()
 }
 
 watch(

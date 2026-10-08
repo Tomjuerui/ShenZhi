@@ -12,19 +12,23 @@ export const createColumns = (showEmbeddingListFn: Function, showGraphFn: Functi
     {
       title: t('knowledgeBase.itemTitle'),
       key: 'title',
-      width: 200,
+      width: 180,
+      fixed: 'left',
+      ellipsis: { tooltip: true },
     },
     {
       title: t('knowledgeBase.brief'),
       key: 'brief',
+      minWidth: 200,
+      // 不设 minWidth 时 naive-ui 会把该列压到 0 宽，文本溢出到右侧列并逐字换行撑高整行
       render(row) {
-        return row.brief.substring(0, 50)
+        return h(NEllipsis, { lineClamp: 2, tooltip: true }, { default: () => row.brief || '' })
       },
     },
     {
       title: t('knowledgeBase.vectorize'),
       key: 'embeddingStatus',
-      width: 150,
+      width: 140,
       render(row) {
         const renderElements: VNode[] = []
         if (row.embeddingStatus === 'NONE') {
@@ -49,7 +53,7 @@ export const createColumns = (showEmbeddingListFn: Function, showGraphFn: Functi
     {
       title: t('knowledgeBase.graphLabel'),
       key: 'graphicalStatus',
-      width: 150,
+      width: 140,
       render(row) {
         const renderElements: VNode[] = []
         if (row.graphicalStatus === 'NONE') {
@@ -74,7 +78,7 @@ export const createColumns = (showEmbeddingListFn: Function, showGraphFn: Functi
     {
       title: t('knowledgeBase.attachment'),
       key: 'sourceFileName',
-      width: 150,
+      width: 140,
       render(row) {
         const soureFile = !!row.sourceFileUuid
         if (soureFile) {
@@ -86,8 +90,8 @@ export const createColumns = (showEmbeddingListFn: Function, showGraphFn: Functi
             default: () => [h(
               NEllipsis,
               {
-                lineClamp: 3,
-                style: 'color:#2080f0;cursor:pointer',
+                lineClamp: 2,
+                style: 'color:var(--ds-primary);cursor:pointer',
               },
               { default: () => row.sourceFileName || row.title },
             ),
@@ -101,22 +105,22 @@ export const createColumns = (showEmbeddingListFn: Function, showGraphFn: Functi
     {
       title: t('knowledgeBase.wordCount'),
       key: 'wordCount',
-      width: 100,
+      width: 90,
     },
     {
       title: t('knowledgeBase.embeddingHitCount'),
       key: 'embeddingHitCount',
-      width: 100,
+      width: 90,
     },
     {
       title: t('knowledgeBase.graphHitCount'),
       key: 'graphHitCount',
-      width: 100,
+      width: 90,
     },
     {
       title: t('knowledgeBase.enabled'),
       key: 'isEnabled',
-      width: 100,
+      width: 90,
       align: 'center',
       render(row) {
         return h(NSwitch, {
@@ -129,17 +133,18 @@ export const createColumns = (showEmbeddingListFn: Function, showGraphFn: Functi
     {
       title: t('knowledgeBase.createTime'),
       key: 'createTime',
-      width: 180,
+      width: 170,
     },
     {
       title: t('knowledgeBase.updateTime'),
       key: 'updateTime',
-      width: 180,
+      width: 170,
     },
     {
       title: t('common.action'),
       key: 'actions',
       width: 100,
+      fixed: 'right',
       align: 'center',
       render(row) {
         return h('div', { class: 'flex items-center flex-col gap-2' }, {

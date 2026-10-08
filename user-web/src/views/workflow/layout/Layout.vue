@@ -15,11 +15,6 @@ const uroute = useRoute()
 const { uuid: currWfUuid } = uroute.params as { uuid: string; viewType: string }
 const { isMobile } = useBasicLayout()
 const collapsed = computed(() => appStore.siderCollapsed)
-const getMobileClass = computed(() => {
-  if (isMobile.value)
-    return ['rounded-none', 'shadow-none']
-  return ['rounded-md', 'dark:border-neutral-800']
-})
 const getContainerClass = computed(() => {
   return [
     'h-full',
@@ -43,8 +38,8 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="h-full dark:bg-[#24272e] transition-all" :class="[isMobile ? 'p-0' : '']">
-    <div class="h-full overflow-hidden" :class="getMobileClass">
+  <div class="h-full bg-ds-bg transition-all">
+    <div class="h-full overflow-hidden">
       <NLayout class="z-40 transition" :class="getContainerClass" has-sider>
         <Sider />
         <NLayoutContent class="h-full">

@@ -42,9 +42,7 @@ function toggleUsingContext() {
 </script>
 
 <template>
-  <header
-    class="sticky top-0 left-0 right-0 z-30 border-b dark:border-neutral-800 bg-white/80 dark:bg-black/20 backdrop-blur"
-  >
+  <header class="sticky top-0 left-0 right-0 z-30 bg-ds-bg border-b border-ds-border">
     <div class="relative flex items-center justify-between min-w-0 overflow-hidden h-14">
       <div class="flex items-center">
         <button
@@ -63,7 +61,7 @@ function toggleUsingContext() {
       </h1>
       <div class="flex items-center space-x-2">
         <HoverButton @click="toggleUsingContext">
-          <span class="text-xl" :class="{ 'text-[#4b9e5f]': usingContext, 'text-[#a8071a]': !usingContext }">
+          <span class="text-xl" :class="{ 'text-ds-primary': usingContext, 'text-ds-muted': !usingContext }">
             <SvgIcon icon="ri:chat-history-line" />
           </span>
         </HoverButton>

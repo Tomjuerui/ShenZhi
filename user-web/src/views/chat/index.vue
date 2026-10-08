@@ -2,8 +2,7 @@
 import type { Ref } from 'vue'
 import { computed, nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { NButton, NCollapse, NCollapseItem, NIcon, NModal, NTabPane, NTabs, useDialog, useLoadingBar, useMessage } from 'naive-ui'
-import { Cat } from '@vicons/fa'
+import { NButton, NCollapse, NCollapseItem, NModal, NTabPane, NTabs, useDialog, useLoadingBar, useMessage } from 'naive-ui'
 import { v4 as uuidv4 } from 'uuid'
 import { AudioMessage, Message } from './components'
 import { useScroll } from './hooks/useScroll'
@@ -22,6 +21,7 @@ import { getDefaultCharacter } from '@/store/modules/chat/helper'
 import { AUDIO_SYNTHESIZER_SIDE, CHAT_MESSAGE_CONTENT_TYPE } from '@/utils/constant'
 import { SvgIcon } from '@/components/common'
 import api from '@/api'
+import logoUrl from '@/icons/logo.svg'
 import { t } from '@/locales'
 import { debounce } from '@/utils/functions/debounce'
 import { emptyAudioPlayState } from '@/utils/functions'
@@ -49,6 +49,19 @@ const messages = computed(() => {
 // | First page messages loading (distinguishes "loading" from a truly empty state)
 const firstPageLoading = computed(() => {
   return !messages.value.length && chatStore.loadingMsgs.has(curCharacterUuid)
+})
+// 空态问候语 | Greeting shown on the empty state
+const greeting = computed(() => {
+  const h = new Date().getHours()
+  if (h < 6)
+    return t('chat.greetingDawn')
+  if (h < 12)
+    return t('chat.greetingMorning')
+  if (h < 14)
+    return t('chat.greetingNoon')
+  if (h < 18)
+    return t('chat.greetingAfternoon')
+  return t('chat.greetingEvening')
 })
 const currCharacter = computed(() => chatStore.getCurCharacter || getDefaultCharacter())
 const imageUuids = ref<string[]>([])
@@ -393,13 +406,6 @@ function handleDelete(questionUuid: string, answerUuid: string, isQuestion = fal
   })
 }
 
-const footerClass = computed(() => {
-  let classes = ['p-4']
-  if (isMobile.value)
-    classes = ['sticky', 'left-0', 'bottom-0', 'right-0', 'p-2', 'pr-3', 'overflow-hidden']
-  return classes
-})
-
 function toggleUsingContext() {
   api.characterToggleUsingContext(currCharacter.value.uuid, !currCharacter.value.understandContextEnable)
   currCharacter.value.understandContextEnable = !currCharacter.value.understandContextEnable
@@ -450,7 +456,7 @@ onDeactivated(() => {
 </script>
 
 <template>
-  <div class="chat-box flex flex-col w-full h-full">
+  <div class="chat-box relative flex flex-col w-full h-full">
     <HeaderComponent
       v-if="isMobile" :using-context="currCharacter.understandContextEnable"
       @toggle-using-context="toggleUsingContext"
@@ -458,18 +464,17 @@ onDeactivated(() => {
     <PcHeader v-if="!isMobile" :character="currCharacter" />
     <main class="relative flex-1 overflow-hidden">
       <div ref="scrollRef" class="h-full overflow-hidden overflow-y-auto" @scroll="handleScroll">
-        <div
-          class="w-full max-w-screen-xl m-auto dark:bg-[#101014]"
-          :class="[isMobile ? 'p-2' : 'p-4']"
-        >
+        <div class="w-full max-w-ds mx-auto px-4 pb-40">
           <template v-if="!authStore.token">
             <LoginTip />
           </template>
           <template v-else-if="!messages.length">
-            <div class="flex items-center justify-center mt-4 text-center text-neutral-400">
-              <NIcon :component="Cat" size="32" />
-              <SvgIcon v-if="firstPageLoading" icon="line-md:loading-loop" class="w-8 h-8 pl-1" />
-              <span v-else class="pl-1 text-sm">{{ t('chat.noRecord') }}</span>
+            <div class="flex flex-col items-center justify-center pt-[18vh] px-4 text-center">
+              <img :src="logoUrl" alt="深智" class="w-10 h-10 mb-4" >
+              <h1 class="text-ds-greeting text-ds-text">
+                {{ t('chat.greetingTemplate', { time: greeting }) }}
+              </h1>
+              <SvgIcon v-if="firstPageLoading" icon="line-md:loading-loop" class="w-6 h-6 mt-4 text-ds-muted" />
             </div>
           </template>
 
@@ -664,14 +669,6 @@ onDeactivated(() => {
             </div>
           </template>
         </div>
-        <div class="sticky bottom-0 left-0 flex justify-center">
-          <NButton v-if="isChatting" size="tiny" @click="handleStop">
-            <template #icon>
-              <SvgIcon icon="ri:stop-circle-line" />
-            </template>
-            {{ t('common.stopRequest') }}
-          </NButton>
-        </div>
       </div>
       <Transition name="scroll-to-bottom">
         <button
@@ -685,14 +682,24 @@ onDeactivated(() => {
         </button>
       </Transition>
     </main>
-    <footer :class="footerClass">
-      <div class="w-full max-w-screen-xl m-auto border-t">
-        <InputToolbar @images-change="imagesChange" />
-        <InputEditor
-          ref="inputEditorRef" :character-uuid="curCharacterUuid" :image-uuids="imageUuids"
-          @sse-started="sseStarted" @message-receiving="chatMessageReceiving" @message-complelted="messageComplelted"
-          @is-chatting="(chatting) => isChatting = chatting"
-        />
+    <footer class="absolute bottom-0 left-0 right-0 pointer-events-none">
+      <!-- 上方渐变遮罩：消息滚到输入框下方时淡出，不再从两侧露出 -->
+      <div class="h-10 bg-gradient-to-t from-ds-bg to-transparent" />
+      <div class="bg-ds-bg">
+        <div class="w-full max-w-ds mx-auto px-4 pb-6">
+          <div class="pointer-events-auto rounded-ds-xl border border-ds-border bg-ds-bg overflow-hidden">
+            <InputEditor
+              ref="inputEditorRef" :character-uuid="curCharacterUuid" :image-uuids="imageUuids"
+              @sse-started="sseStarted" @message-receiving="chatMessageReceiving" @message-complelted="messageComplelted"
+              @is-chatting="(chatting) => isChatting = chatting"
+            />
+            <InputToolbar
+              :submit-disabled="inputEditorRef?.buttonDisabled ?? true" :chatting="isChatting"
+              @images-change="imagesChange" @submit="inputEditorRef?.handleSubmit()"
+              @stop="handleStop" @voice="inputEditorRef?.handleShowAudioRecorderModal()"
+            />
+          </div>
+        </div>
       </div>
     </footer>
 

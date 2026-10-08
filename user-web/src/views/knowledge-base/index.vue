@@ -1,9 +1,8 @@
 <script setup lang='ts'>
 import type { Ref } from 'vue'
 import { computed, nextTick, onActivated, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
-import { NButton, NCollapse, NCollapseItem, NFlex, NIcon, NInput, NModal, NSpin, useDialog, useLoadingBar, useMessage } from 'naive-ui'
-import { Cat } from '@vicons/fa'
+import { useRoute, useRouter } from 'vue-router'
+import { NButton, NCollapse, NCollapseItem, NFlex, NInput, NModal, NSpin, useDialog, useLoadingBar, useMessage } from 'naive-ui'
 import { Message } from '../chat/components'
 import { useScroll } from '../chat/hooks/useScroll'
 import HeaderComponent from './Header/index.vue'
@@ -14,12 +13,14 @@ import { LLMSelector, SvgIcon } from '@/components/common'
 import { useBasicLayout } from '@/hooks/useBasicLayout'
 import { useAppStore, useAuthStore, useKbStore } from '@/store'
 import api from '@/api'
+import whaleUrl from '@/assets/whale.svg'
 import { t } from '@/locales'
 import { debounce } from '@/utils/functions/debounce'
 
 let controller = new AbortController()
 
 const route = useRoute()
+const router = useRouter()
 const ms = useMessage()
 const dialog = useDialog()
 const appStore = useAppStore()
@@ -49,6 +50,11 @@ async function handleSubmit() {
   if (!authStore.checkLoginOrShow())
     return
 
+  if (!kbStore.getSelectedKb) {
+    ms.warning(t('knowledgeBase.noKbSelected'))
+    return
+  }
+
   const message = prompt.value
 
   if (!message || message.trim() === '')
@@ -62,17 +68,17 @@ async function handleSubmit() {
 
   prompt.value = ''
 
-  const { data: qaRecord } = await api.knowledgeBaseQaRecordAdd<KnowledgeBase.QaRecordInfo>(currKbUuid, { question: message, modelName: appStore.selectedLLM.modelName })
-  qaRecord.answer = t('common.generating')
-  qaRecord.loading = true
-  qaRecord.aiModelPlatform = appStore.selectedLLM.modelPlatform
-
-  nextTick(() => {
-    scrollToBottom()
-  })
-
   try {
+    const { data: qaRecord } = await api.knowledgeBaseQaRecordAdd<KnowledgeBase.QaRecordInfo>(currKbUuid, { question: message, modelName: appStore.selectedLLM.modelName })
+    qaRecord.answer = t('common.generating')
+    qaRecord.loading = true
+    qaRecord.aiModelPlatform = appStore.selectedLLM.modelPlatform
+
     kbStore.appendRecord(currKbUuid, qaRecord)
+
+    nextTick(() => {
+      scrollToBottom()
+    })
 
     await api.knowledgeBaseQaSseAsk({
       options: {
@@ -88,15 +94,11 @@ async function handleSubmit() {
         console.log('Thinking data received:', chunk)
       },
       messageReceived: (chunk) => {
-        try {
-          kbStore.appendChunk(
-            currKbUuid,
-            qaRecord.uuid,
-            chunk,
-          )
-        } catch (error) {
-          console.error(error)
-        }
+        kbStore.appendChunk(
+          currKbUuid,
+          qaRecord.uuid,
+          chunk,
+        )
         scrollToBottomIfAtBottom()
       },
       doneCallback: (chunk) => {
@@ -129,11 +131,9 @@ async function handleSubmit() {
       },
     })
   } catch (error: any) {
-    const errorMessage = error?.message ?? t('common.wrong')
-    ms.error(errorMessage)
-    qaRecord.answer = errorMessage
-    qaRecord.error = true
+    // 建记录就失败（例如 kbUuid 不存在 → A0017）：必须复位 + 提示，不能静默卡住
     sseRequesting.value = false
+    ms.error(error?.message ?? t('common.wrong'))
   }
 }
 
@@ -260,7 +260,7 @@ const placeholder = computed(() => {
 })
 
 const buttonDisabled = computed(() => {
-  return sseRequesting.value || !prompt.value || prompt.value.trim() === ''
+  return sseRequesting.value || !kbStore.getSelectedKb || !prompt.value || prompt.value.trim() === ''
 })
 
 const footerClass = computed(() => {
@@ -323,14 +323,18 @@ onActivated(async () => {
     <PCHeader v-else :knowledge-base="kbStore.getSelectedKb as KnowledgeBase.Info" />
     <main class="relative flex-1 overflow-hidden">
       <div id="scrollRef" ref="scrollRef" class="h-full overflow-hidden overflow-y-auto" @scroll="handleScroll">
-        <div
-          id="image-wrapper" class="w-full max-w-screen-xl m-auto dark:bg-[#101014]"
-          :class="[isMobile ? 'p-2' : 'p-4']"
-        >
+        <div id="image-wrapper" class="w-full max-w-ds mx-auto px-4 py-4">
           <LoginTip v-if="!authStore.token" />
           <template v-else-if="!qaRecords.length">
-            <div class="flex items-center justify-center mt-4 text-center text-neutral-400">
-              <NIcon :component="Cat" size="32" />
+            <div v-if="!kbStore.getSelectedKb" class="flex flex-col items-center justify-center pt-[12vh] px-4 text-center">
+              <img :src="whaleUrl" alt="深智" class="w-12 h-12 mb-3 rounded-full" >
+              <p class="mb-3 text-sm text-ds-secondary">{{ t('knowledgeBase.noKbTip') }}</p>
+              <NButton type="primary" size="small" @click="router.push({ name: 'KnowledgeBaseManage' })">
+                {{ t('knowledgeBase.gotoManage') }}
+              </NButton>
+            </div>
+            <div v-else class="flex items-center justify-center mt-4 text-center text-neutral-400">
+              <img :src="whaleUrl" alt="深智" class="w-8 h-8 rounded-full" >
               <SvgIcon v-if="firstPageLoading" icon="line-md:loading-loop" class="w-8 h-8 pl-1" />
               <span v-else class="pl-1 text-sm">{{ t('knowledgeBase.noRecord') }}</span>
             </div>
@@ -390,7 +394,7 @@ onActivated(async () => {
       </Transition>
     </main>
     <footer :class="footerClass">
-      <div class="w-full max-w-screen-xl m-auto">
+      <div class="w-full max-w-ds mx-auto px-4">
         <div class="flex items-center justify-between space-x-2">
           <div class="w-48">
             <LLMSelector />

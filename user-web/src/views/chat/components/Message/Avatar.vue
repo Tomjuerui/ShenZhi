@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { NAvatar } from 'naive-ui'
 import { useUserStore } from '@/store'
 import { isString } from '@/utils/is'
-import defaultAvatar from '@/assets/avatar.jpg'
+import defaultAvatar from '@/assets/avatar-default.svg'
 import ollamaAvatar from '@/assets/ollama.png'
 import baiduchatgpt from '@/assets/baiduchatgpt.png'
 import tongyiqianwen from '@/assets/tongyiqianwen.png'
@@ -92,11 +92,10 @@ const avatar = computed(() => userStore.userInfo.avatar)
   <NAvatar
     v-else-if="name"
     round
-    bordered
     :size="imageSize ? imageSize : 32"
     :style="{
-      color: 'gray',
-      border: 'solid 1px gray',
+      color: 'var(--ds-text-secondary)',
+      border: 'solid 1px var(--ds-border)',
       backgroundColor: 'transparent',
     }"
   >

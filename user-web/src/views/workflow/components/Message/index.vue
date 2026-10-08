@@ -115,7 +115,7 @@ function openFileInNewTab(filelUrl: string) {
         {{ wfRuntime.createTime }}
         <span v-if="inputTokens != null && inputTokens > 0" class="ml-1">📥 {{ inputTokens }}</span>
         <span v-if="outputTokens != null && outputTokens > 0" class="ml-1">📤 {{ outputTokens }}</span>
-        <span v-if="duration != null && duration > 0" class="ml-1">⏱ {{ formatDuration(duration) }}</span>
+        <span v-if="duration != null && duration > 0" class="ml-1">· {{ formatDuration(duration) }}</span>
       </p>
       <div class="flex items-center w-full" :class="[{ 'flex-row-reverse': inversion }]">
         <!-- 1、渲染文字 -->

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" role="img" aria-label="深智">
-  <rect width="48" height="48" rx="11" fill="#4d6bfe"/>
-  <g fill="#ffffff">
+  <circle cx="24" cy="24" r="24" fill="#eef2ff"/>
+  <g fill="#4d6bfe">
     <!-- 水柱 -->
     <circle cx="15.6" cy="15.4" r="1.5"/>
     <circle cx="18.8" cy="14.6" r="1.5"/>
@@ -11,6 +11,9 @@
     <ellipse cx="20" cy="25.6" rx="13" ry="8.6"/>
     <!-- 胸鳍 -->
     <path d="M17.5 32.4 21 39.4l4.6-6.2z"/>
+    <!-- 腹部 -->
+    <ellipse cx="20" cy="28.6" rx="9.6" ry="4.4" fill="#ffffff" opacity=".5"/>
+    <!-- 眼睛 -->
+    <circle cx="13.6" cy="23.4" r="1.5" fill="#ffffff"/>
   </g>
-  <circle cx="13.6" cy="23.4" r="1.5" fill="#4d6bfe"/>
 </svg>

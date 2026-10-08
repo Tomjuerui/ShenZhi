@@ -1,6 +1,6 @@
 <script setup lang='ts'>
 import { computed, ref, watch } from 'vue'
-import { NButton, NCheckbox, NCheckboxGroup, NFlex, NList, NListItem, NModal, NPopover, NSwitch, NUpload, useMessage } from 'naive-ui'
+import { NButton, NCheckbox, NCheckboxGroup, NFlex, NList, NListItem, NModal, NPopover, NUpload, useMessage } from 'naive-ui'
 import type { UploadFileInfo } from 'naive-ui'
 import ConvKnowledgeSelector from './ConvKnowledgeSelector.vue'
 import { LLMSelector, SvgIcon } from '@/components/common'
@@ -9,11 +9,19 @@ import { getDefaultCharacter } from '@/store/modules/chat/helper'
 import { router } from '@/router'
 import { t } from '@/locales'
 import api from '@/api'
+
 const emit = defineEmits<Emit>()
 const allowedImageTypes = ['image/png', 'image/jpeg']
 interface Emit {
   (e: 'imagesChange', imageUuids: string[]): void
+  (e: 'submit'): void
+  (e: 'stop'): void
+  (e: 'voice'): void
 }
+withDefaults(defineProps<{ submitDisabled?: boolean; chatting?: boolean }>(), {
+  submitDisabled: true,
+  chatting: false,
+})
 const appStore = useAppStore()
 const authStore = useAuthStore()
 const chatStore = useChatStore()
@@ -56,7 +64,6 @@ function handleFinish({ file, event }: { file: UploadFileInfo; event?: ProgressE
     uploadedUuidList.value.push(res.data.uuid)
     uploadedUrls.value.push(res.data.url)
     uploadedFileInfoList.value.push(file)
-    console.log(`image uuid:${res.data.uuid}`)
   } else {
     console.log(`handleOriginalFinish err:${res.data}`)
   }
@@ -207,150 +214,224 @@ watch(isDeepSeekThinking, async (newVal) => {
 </script>
 
 <template>
-  <div class="flex flex-col space-x-2 input-tool-bar">
-    <div class="flex flex-row space-x-2 items-center py-1.5">
-      <div>
-        <LLMSelector />
-      </div>
-      <div
-        class="rounded border hover:border-green-600 text-green-600 p-1"
-        :class="{ 'cursor-pointer': isReasoner && isThinkingClosable, 'cursor-not-allowed': !isReasoner || !isThinkingClosable }"
-        @click="toogleThinking"
-      >
-        <template v-if="isReasoner && isThinkingClosable">
-          {{ t('chat.deepThinking') }}
-          <NSwitch :value="currCharacter.isEnableThinking" size="small" />
-        </template>
-        <template v-if="isReasoner && !isThinkingClosable">
-          <NPopover trigger="hover">
-            <template #trigger>
-              <div>
-                {{ t('chat.deepThinking') }}
-                <NSwitch :value="true" size="small" disabled />
-              </div>
-            </template>
-            <span> {{ t('chat.deepThinkingCannotDisable') }} </span>
-          </NPopover>
-        </template>
-        <template v-if="!isReasoner">
-          <NPopover trigger="hover">
-            <template #trigger>
-              <div>
-                {{ t('chat.deepThinking') }}
-                <NSwitch :value="false" size="small" disabled />
-              </div>
-            </template>
-            <span> {{ t('chat.deepThinkingNotSupported') }} </span>
-          </NPopover>
-        </template>
-      </div>
-      <div
-        class="rounded border hover:border-green-600 text-green-600 p-1"
-        :class="{ 'cursor-pointer': appStore.selectedLLM.isSupportWebSearch, 'cursor-not-allowed': !appStore.selectedLLM.isSupportWebSearch }"
-        @click="toogleWebSearch"
-      >
-        <template v-if="appStore.selectedLLM.isSupportWebSearch">
-          {{ t('chat.webSearch') }}
-          <NSwitch :value="currCharacter.isEnableWebSearch" size="small" />
-        </template>
-        <template v-if="!appStore.selectedLLM.isSupportWebSearch">
-          <NPopover trigger="hover">
-            <template #trigger>
-              <div>
-                {{ t('chat.webSearch') }}
-                <NSwitch :value="false" size="small" disabled />
-              </div>
-            </template>
-            <span> {{ t('chat.webSearchNotSupported') }} </span>
-          </NPopover>
-        </template>
-      </div>
-      <div class="rounded border hover:border-green-600 cursor-pointer p-2" @click="toggleUsingContext">
+  <div class="input-tool-bar flex flex-wrap items-center gap-1.5 px-3 pb-2.5 pt-1">
+    <LLMSelector />
+
+    <!-- 深度思考 -->
+    <div
+      class="ds-chip"
+      :class="[
+        currCharacter.isEnableThinking && isReasoner && isThinkingClosable ? 'ds-chip--on' : '',
+        (!isReasoner || !isThinkingClosable) ? 'ds-chip--disabled' : '',
+        (isReasoner && isThinkingClosable) ? 'cursor-pointer' : 'cursor-not-allowed',
+      ]"
+      @click="toogleThinking"
+    >
+      <template v-if="isReasoner && isThinkingClosable">
+        <SvgIcon icon="ri:brain-line" />
+        {{ t('chat.deepThinking') }}
+      </template>
+      <template v-if="isReasoner && !isThinkingClosable">
         <NPopover trigger="hover">
           <template #trigger>
-            <span
-              :class="{ 'text-[#4b9e5f]': currCharacter.understandContextEnable, 'text-[#a8071a]': !currCharacter.understandContextEnable }"
-            >
-              <SvgIcon icon="ri:chat-history-line" />
+            <span class="flex items-center gap-1">
+              <SvgIcon icon="ri:brain-line" />
+              {{ t('chat.deepThinking') }}
             </span>
           </template>
-          <span> {{ currCharacter.understandContextEnable ? t('chat.understandContextEnable')
-            : t('chat.understandContextDisable') }} </span>
+          <span>{{ t('chat.deepThinkingCannotDisable') }}</span>
         </NPopover>
-      </div>
-      <div class="rounded border hover:border-green-600 hover:text-green-600 cursor-pointer pt-2 px-2">
+      </template>
+      <template v-if="!isReasoner">
+        <NPopover trigger="hover">
+          <template #trigger>
+            <span class="flex items-center gap-1">
+              <SvgIcon icon="ri:brain-line" />
+              {{ t('chat.deepThinking') }}
+            </span>
+          </template>
+          <span>{{ t('chat.deepThinkingNotSupported') }}</span>
+        </NPopover>
+      </template>
+    </div>
+
+    <!-- 联网搜索 -->
+    <div
+      class="ds-chip"
+      :class="[
+        currCharacter.isEnableWebSearch && appStore.selectedLLM.isSupportWebSearch ? 'ds-chip--on' : '',
+        appStore.selectedLLM.isSupportWebSearch ? 'cursor-pointer' : 'ds-chip--disabled cursor-not-allowed',
+      ]"
+      @click="toogleWebSearch"
+    >
+      <template v-if="appStore.selectedLLM.isSupportWebSearch">
+        <SvgIcon icon="ri:global-line" />
+        {{ t('chat.webSearch') }}
+      </template>
+      <template v-else>
+        <NPopover trigger="hover">
+          <template #trigger>
+            <span class="flex items-center gap-1">
+              <SvgIcon icon="ri:global-line" />
+              {{ t('chat.webSearch') }}
+            </span>
+          </template>
+          <span>{{ t('chat.webSearchNotSupported') }}</span>
+        </NPopover>
+      </template>
+    </div>
+
+    <!-- 上下文 -->
+    <div
+      class="ds-chip cursor-pointer"
+      :class="currCharacter.understandContextEnable ? 'ds-chip--on' : ''"
+      @click="toggleUsingContext"
+    >
+      <NPopover trigger="hover">
+        <template #trigger>
+          <span class="flex items-center gap-1">
+            <SvgIcon icon="ri:chat-history-line" />
+            {{ t('chat.usingContext') }}
+          </span>
+        </template>
+        <span>{{ currCharacter.understandContextEnable ? t('chat.understandContextEnable') : t('chat.understandContextDisable') }}</span>
+      </NPopover>
+    </div>
+
+    <!-- 知识库 -->
+    <div class="ds-chip cursor-pointer max-w-[180px]" @click="handleKnowledgeModalShow">
+      <SvgIcon icon="ri:book-2-line" />
+      <span class="truncate">
+        {{ t('chat.knowledgeBaseLabel') }}
+        <template v-if="currCharacter.characterKnowledgeList.length === 0">· {{ t('common.none') }}</template>
+        <template v-else>
+          · {{ currCharacter.characterKnowledgeList.map(k => k.title).join('、') }}
+        </template>
+      </span>
+    </div>
+
+    <!-- 工具 / MCP -->
+    <div class="ds-chip cursor-pointer max-w-[180px]" @click="handleMcpModalShow">
+      <SvgIcon icon="ri:tools-line" />
+      <span class="truncate">
+        {{ t('chat.toolLabel') }}
+        <template v-if="currCharacter.mcpIds.length === 0">· {{ t('common.none') }}</template>
+        <template v-else>
+          · {{ mcpStore.myUserMcpList.filter(m => currCharacter.mcpIds.includes(m.mcpInfo.id)).map(m => m.mcpInfo.title).join('、') }}
+        </template>
+      </span>
+    </div>
+
+    <!-- 右侧动作区：附件 / 语音 / 发送 -->
+    <div class="ml-auto flex items-center gap-1.5">
+      <div class="ds-chip" :class="canUploadImage ? 'cursor-pointer' : 'ds-chip--disabled cursor-not-allowed'">
         <NUpload
           :action="`/api/image/upload?token=${token}`" response-type="text" :disabled="!canUploadImage"
-          @before-upload="beforeUpload" @finish="handleFinish"
+          :show-file-list="false" @before-upload="beforeUpload" @finish="handleFinish"
         >
           <NPopover trigger="hover">
             <template #trigger>
-              <span>
-                <SvgIcon icon="ri:image-line" />
+              <span class="flex items-center">
+                <SvgIcon icon="ri:attachment-2" class="text-base" />
               </span>
             </template>
-            <span> {{ canUploadImage ? t('chat.uploadImageTip') : t('chat.uploadImageNotSupported') }} </span>
+            <span>{{ canUploadImage ? t('chat.uploadImageTip') : t('chat.uploadImageNotSupported') }}</span>
           </NPopover>
         </NUpload>
       </div>
-      <div
-        class="overflow-hidden rounded border hover:border-green-600 p-1 h-8 cursor-pointer"
-        @click="handleKnowledgeModalShow"
+      <NButton circle size="small" quaternary :title="t('chat.voiceChat')" @click="emit('voice')">
+        <template #icon>
+          <SvgIcon icon="icon-park-outline:voice" />
+        </template>
+      </NButton>
+      <NButton
+        v-if="chatting" circle size="small" type="primary" :title="t('common.stopRequest')"
+        @click="emit('stop')"
       >
-        <span class="text-xs text-green-600">{{ t('chat.knowledgeBaseLabel') }}</span>
-        <template v-for="knolwedge in currCharacter.characterKnowledgeList" :key="knolwedge.uuid">
-          <span class="text-xs mr-1">{{ knolwedge.title }}</span>
+        <template #icon>
+          <SvgIcon icon="ri:stop-fill" />
         </template>
-        <span v-if="currCharacter.characterKnowledgeList.length === 0" class="text-xs mr-1">{{ t('common.none') }}</span>
-      </div>
-      <div class="flex-1 overflow-hidden rounded border hover:border-green-600 cursor-pointer p-1 h-8" @click="handleMcpModalShow">
-        <span class="text-xs text-green-600">{{ t('chat.toolLabel') }}</span>
-        <template v-for="userMcp in mcpStore.myUserMcpList" :key="userMcp.uuid">
-          <span v-if="currCharacter.mcpIds.includes(userMcp.mcpInfo.id)" class="text-xs mr-1">{{ userMcp.mcpInfo.title
-          }}</span>
+      </NButton>
+      <NButton
+        v-else circle size="small" type="primary" :disabled="submitDisabled"
+        :title="t('chat.sendMessageShortcut')" @click="emit('submit')"
+      >
+        <template #icon>
+          <SvgIcon icon="ri:arrow-up-line" />
         </template>
-        <span v-if="currCharacter.mcpIds.length === 0" class="text-xs mr-1">{{ t('common.none') }}</span>
-      </div>
+      </NButton>
     </div>
-    <NList hoverable show-divider>
-      <NListItem v-for="fileInfo in uploadedFileInfoList" :key="fileInfo.id">
-        <div class="flex">
-          <span class="flex-1 text-xs">{{ fileInfo.name }}</span>
-          <SvgIcon
-            class="flex-none cursor-pointer text-sm" icon="clarity:remove-line"
-            @click="handlerRemove({ file: fileInfo })"
-          />
-        </div>
-      </NListItem>
-    </NList>
-    <NModal
-      v-model:show="knowledgeModalShow" display-directive="show" style="width: 90%; max-width: 800px"
-      preset="card" :title="t('chat.configCharacterKnowledge')"
-    >
-      <ConvKnowledgeSelector :tmp-save="false" :character="currCharacter" @submitted="handleKnowledgeSave" />
-    </NModal>
-    <NModal v-model:show="mcpModalShow" style="width: 90%; max-width: 640px" preset="card" :title="t('chat.configMcp')">
-      <NCheckboxGroup v-model:value="tmpMcpIds" class="my-2 flex flex-wrap space-x-2">
-        <NCheckbox
-          v-for="userMcp in mcpStore.myUserMcpList" :key="userMcp.uuid" :value="userMcp.mcpInfo.id"
-          :label="userMcp.mcpInfo.title"
-        />
-      </NCheckboxGroup>
-      <span v-if="mcpStore.myUserMcpList.length === 0" class="mr-1">{{ t('common.noData') }}</span>
-      <NFlex justify="space-between" class="mt-4">
-        <NButton type="primary" text tag="a" class="mt-4" @click="gotoMcp">
-          {{ t('chat.goEnableMoreTools') }}
-        </NButton>
-        <NButton type="primary" @click="handleSaveMcps()">
-          {{ t('common.save') }}
-        </NButton>
-      </NFlex>
-    </NModal>
   </div>
+
+  <NList v-if="uploadedFileInfoList.length > 0" hoverable show-divider>
+    <NListItem v-for="fileInfo in uploadedFileInfoList" :key="fileInfo.id">
+      <div class="flex">
+        <span class="flex-1 text-xs">{{ fileInfo.name }}</span>
+        <SvgIcon
+          class="flex-none cursor-pointer text-sm" icon="clarity:remove-line"
+          @click="handlerRemove({ file: fileInfo })"
+        />
+      </div>
+    </NListItem>
+  </NList>
+
+  <NModal
+    v-model:show="knowledgeModalShow" display-directive="show" style="width: 90%; max-width: 800px"
+    preset="card" :title="t('chat.configCharacterKnowledge')"
+  >
+    <ConvKnowledgeSelector :tmp-save="false" :character="currCharacter" @submitted="handleKnowledgeSave" />
+  </NModal>
+  <NModal v-model:show="mcpModalShow" style="width: 90%; max-width: 640px" preset="card" :title="t('chat.configMcp')">
+    <NCheckboxGroup v-model:value="tmpMcpIds" class="my-2 flex flex-wrap space-x-2">
+      <NCheckbox
+        v-for="userMcp in mcpStore.myUserMcpList" :key="userMcp.uuid" :value="userMcp.mcpInfo.id"
+        :label="userMcp.mcpInfo.title"
+      />
+    </NCheckboxGroup>
+    <span v-if="mcpStore.myUserMcpList.length === 0" class="mr-1">{{ t('common.noData') }}</span>
+    <NFlex justify="space-between" class="mt-4">
+      <NButton type="primary" text tag="a" class="mt-4" @click="gotoMcp">
+        {{ t('chat.goEnableMoreTools') }}
+      </NButton>
+      <NButton type="primary" @click="handleSaveMcps()">
+        {{ t('common.save') }}
+      </NButton>
+    </NFlex>
+  </NModal>
 </template>
 
 <style lang="less">
 .input-tool-bar .n-upload-file-list {
-  display: none
+  display: none;
+}
+
+.ds-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--ds-radius-pill);
+  border: 1px solid var(--ds-border);
+  background: var(--ds-bg);
+  color: var(--ds-text-secondary);
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  transition: background-color .15s, border-color .15s, color .15s;
+}
+
+.ds-chip:hover {
+  background: var(--ds-bg-hover);
+}
+
+.ds-chip--on {
+  border-color: var(--ds-primary-border);
+  background: var(--ds-primary-soft);
+  color: var(--ds-primary);
+}
+
+.ds-chip--disabled {
+  opacity: .6;
 }
 </style>

@@ -145,10 +145,19 @@ const columns = computed(() => {
     title: '#',
     key: 'serialNumber',
     width: serialColWidth.value,
+    fixed: 'left',
     align: 'center',
     render: (_row, index) => (paginationReactive.page - 1) * paginationReactive.pageSize + index + 1,
   })
   return cols
+})
+
+// 列总宽超过容器时，不传 scroll-x 的 naive-ui 会把右侧列裁掉（不可见也滚不到）
+const tableScrollX = computed(() => {
+  return columns.value.reduce((total, col) => {
+    const { width, minWidth, type } = col as { width?: number, minWidth?: number, type?: string }
+    return total + Number(width ?? minWidth ?? (type === 'selection' ? 40 : 0))
+  }, 0)
 })
 
 function changeIndexModal() {
@@ -404,7 +413,7 @@ watch(
         </div>
       </div>
       <NDataTable
-        remote :loading="loading" :max-height="tableMaxHeight" :columns="columns" :data="itemList" :pagination="paginationReactive"
+        remote :loading="loading" :max-height="tableMaxHeight" :scroll-x="tableScrollX" :columns="columns" :data="itemList" :pagination="paginationReactive"
         :single-line="false" :bordered="true" :row-key="rowKey" :checked-row-keys="checkedItemRowKeys"
         @update:checked-row-keys="onHandleCheckedRowKeys" @update:page="onHandlePageChange"
       />

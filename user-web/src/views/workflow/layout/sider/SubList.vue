@@ -54,19 +54,19 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="scrollRef" class="px-4 h-full overflow-y-auto" @scroll="handleScroll">
+  <div ref="scrollRef" class="px-2 h-full overflow-y-auto" @scroll="handleScroll">
     <template v-if="!list.length">
-      <div class="flex flex-col items-center mt-4 text-center text-neutral-300">
+      <div class="flex flex-col items-center mt-4 text-center text-ds-muted">
         <SvgIcon icon="ri:inbox-line" class="mb-2 text-3xl" />
         <span>{{ t('common.noData') }}</span>
       </div>
     </template>
     <template v-else>
-      <div class="flex flex-col gap-2 text-sm">
+      <div class="flex flex-col gap-0.5 text-sm">
         <a
           v-for="item of list" :key="item.uuid"
-          class="relative flex items-center gap-3 px-3 py-3 break-all border rounded-md cursor-pointer hover:bg-neutral-100 group dark:border-neutral-800 dark:hover:bg-[#24272e]"
-          :class="item.uuid === activeWfUuid && ['border-[#4b9e5f]', 'bg-neutral-100', 'text-[#4b9e5f]', 'dark:bg-[#24272e]', 'dark:border-[#4b9e5f]', 'pr-14']"
+          class="relative flex items-center gap-2 px-2.5 py-2 break-all rounded-ds-md cursor-pointer text-[13px] transition-colors"
+          :class="item.uuid === activeWfUuid ? 'bg-ds-active text-ds-text' : 'text-ds-secondary hover:bg-ds-hover'"
           @click="handleSelect(item)" @mouseenter="handleMouseEnter(item)" @mouseleave="handleMouseLeave"
         >
           <span>

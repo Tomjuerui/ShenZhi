@@ -5,7 +5,7 @@ import { Star24Filled, Star24Regular } from '@vicons/fluent'
 import { Bookmarks, VectorBeizer2 } from '@vicons/tabler'
 import { useKbStore } from '@/store'
 import { knowledgeBaseEmptyInfo } from '@/utils/functions'
-import defaultAvatar from '@/assets/avatar.jpg'
+import defaultAvatar from '@/assets/avatar-default.svg'
 import api from '@/api'
 import { t } from '@/locales'
 
